@@ -1,0 +1,2 @@
+@AGENTS.md
+@FEATURE_NOTES.md

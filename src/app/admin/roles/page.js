@@ -36,6 +36,7 @@ const MOCK_PERMISSIONS = [
   { id: 'p2', role_id: 'a1111111-1111-1111-1111-111111111111', resource: 'users', can_view: true, can_create: true, can_update: true, can_delete: true },
   { id: 'p3', role_id: 'a1111111-1111-1111-1111-111111111111', resource: 'roles', can_view: true, can_create: true, can_update: true, can_delete: true },
   { id: 'p13', role_id: 'a1111111-1111-1111-1111-111111111111', resource: 'use_cases', can_view: true, can_create: true, can_update: true, can_delete: true },
+  { id: 'p17', role_id: 'a1111111-1111-1111-1111-111111111111', resource: 'notifications', can_view: true, can_create: true, can_update: false, can_delete: false },
 
   // Manager permissions
   { id: 'p0b', role_id: 'b2222222-2222-2222-2222-222222222222', resource: 'dashboard', can_view: true, can_create: false, can_update: false, can_delete: false },
@@ -43,6 +44,7 @@ const MOCK_PERMISSIONS = [
   { id: 'p5', role_id: 'b2222222-2222-2222-2222-222222222222', resource: 'users', can_view: true, can_create: false, can_update: false, can_delete: false },
   { id: 'p6', role_id: 'b2222222-2222-2222-2222-222222222222', resource: 'roles', can_view: false, can_create: false, can_update: false, can_delete: false },
   { id: 'p14', role_id: 'b2222222-2222-2222-2222-222222222222', resource: 'use_cases', can_view: true, can_create: true, can_update: true, can_delete: false },
+  { id: 'p18', role_id: 'b2222222-2222-2222-2222-222222222222', resource: 'notifications', can_view: true, can_create: true, can_update: false, can_delete: false },
 
   // Developer permissions
   { id: 'p0c', role_id: 'c3333333-3333-3333-3333-333333333333', resource: 'dashboard', can_view: true, can_create: false, can_update: false, can_delete: false },
@@ -50,6 +52,7 @@ const MOCK_PERMISSIONS = [
   { id: 'p8', role_id: 'c3333333-3333-3333-3333-333333333333', resource: 'users', can_view: true, can_create: false, can_update: false, can_delete: false },
   { id: 'p9', role_id: 'c3333333-3333-3333-3333-333333333333', resource: 'roles', can_view: false, can_create: false, can_update: false, can_delete: false },
   { id: 'p15', role_id: 'c3333333-3333-3333-3333-333333333333', resource: 'use_cases', can_view: true, can_create: false, can_update: false, can_delete: false },
+  { id: 'p19', role_id: 'c3333333-3333-3333-3333-333333333333', resource: 'notifications', can_view: true, can_create: false, can_update: false, can_delete: false },
 
   // Business Analyst permissions
   { id: 'p0d', role_id: 'd4444444-4444-4444-4444-444444444444', resource: 'dashboard', can_view: true, can_create: false, can_update: false, can_delete: false },
@@ -57,6 +60,7 @@ const MOCK_PERMISSIONS = [
   { id: 'p11', role_id: 'd4444444-4444-4444-4444-444444444444', resource: 'users', can_view: true, can_create: false, can_update: false, can_delete: false },
   { id: 'p12', role_id: 'd4444444-4444-4444-4444-444444444444', resource: 'roles', can_view: false, can_create: false, can_update: false, can_delete: false },
   { id: 'p16', role_id: 'd4444444-4444-4444-4444-444444444444', resource: 'use_cases', can_view: true, can_create: true, can_update: true, can_delete: true },
+  { id: 'p20', role_id: 'd4444444-4444-4444-4444-444444444444', resource: 'notifications', can_view: true, can_create: false, can_update: false, can_delete: false },
 ];
 
 const MOCK_USERS = [

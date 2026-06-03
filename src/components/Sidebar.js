@@ -19,18 +19,19 @@ import {
   FolderKanban,
   BarChart2,
   ClipboardList,
+  Bell,
 } from 'lucide-react';
-
 const ICON_MAP = {
-  dashboard:  LayoutDashboard,
-  tasks:      CheckSquare,
-  use_cases:  FileText,
-  daily_logs: CalendarDays,
-  team_logs:  ClipboardList,
-  projects:   FolderKanban,
-  statistics: BarChart2,
-  users:      Users,
-  roles:      ShieldCheck,
+  dashboard:     LayoutDashboard,
+  tasks:         CheckSquare,
+  use_cases:     FileText,
+  daily_logs:    CalendarDays,
+  team_logs:     ClipboardList,
+  projects:      FolderKanban,
+  statistics:    BarChart2,
+  notifications: Bell,
+  users:         Users,
+  roles:         ShieldCheck,
 };
 import { useState, useEffect } from 'react';
 
@@ -91,8 +92,8 @@ export default function Sidebar() {
           >
             {theme === 'dark' ? <Sun className="h-4.5 w-4.5" /> : <Moon className="h-4.5 w-4.5" />}
           </button>
-          <button 
-            onClick={() => setIsOpen(!isOpen)} 
+          <button
+            onClick={() => setIsOpen(!isOpen)}
             className="p-1.5 rounded-lg bg-slate-100 dark:bg-gray-900 text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-white transition-colors"
           >
             {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}

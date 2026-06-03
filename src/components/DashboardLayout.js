@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/context/AuthContext';
 import Sidebar from './Sidebar';
+import NotificationBell from './NotificationBell';
 
 export default function DashboardLayout({ children }) {
   const { user, authError } = useAuth();
@@ -26,6 +27,11 @@ export default function DashboardLayout({ children }) {
           {children}
         </div>
       </main>
+
+      {/* Floating notification bell — fixed bottom-right */}
+      <div className="fixed bottom-6 right-6 z-50">
+        <NotificationBell />
+      </div>
     </div>
   );
 }

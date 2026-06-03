@@ -52,6 +52,13 @@ export const NAV_ITEMS = [
     href: '/statistics',
   },
   {
+    resource: 'notifications',
+    label: 'Thông báo',
+    adminLabel: 'Quản lý Thông báo',
+    desc: 'Nhận và gửi thông báo nội bộ đến các thành viên trong hệ thống',
+    href: '/notifications',
+  },
+  {
     resource: 'users',
     label: 'Thành viên',
     adminLabel: 'Quản lý Thành viên (Users)',

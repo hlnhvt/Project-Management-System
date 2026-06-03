@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
-import { supabase, getUserPermissions } from '@/lib/supabase';
+import { supabase, getUserPermissions, withTimeout } from '@/lib/supabase';
 import { useRouter, usePathname } from 'next/navigation';
 import { Activity, RefreshCw, WifiOff } from 'lucide-react';
 
@@ -177,6 +177,22 @@ export function AuthProvider({ children }) {
       throw error;
     }
   };
+
+  // Keepalive: ping nhẹ mỗi 4 phút để giữ Supabase không vào trạng thái ngủ.
+  // Không có keepalive, client-side navigation sẽ luôn gặp cold-query vì không có
+  // auth query "đánh thức" DB trước như khi F5.
+  useEffect(() => {
+    if (!user) return;
+    const ping = () => {
+      withTimeout(
+        supabase.from('profiles').select('id').eq('id', user.id).limit(1),
+        8000
+      ).catch(() => {});
+    };
+    ping(); // ping ngay khi user vừa đăng nhập / trang vừa load
+    const id = setInterval(ping, 4 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [user]);
 
   // Helper kiểm tra quyền nhanh ở client
   // Admin luôn có toàn quyền ở mọi chức năng, bất kể cấu hình DB

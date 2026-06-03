@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import DashboardLayout from '@/components/DashboardLayout';
+import SimpleRichEditor from '@/components/SimpleRichEditor';
 import { supabase, withTimeout } from '@/lib/supabase';
 import {
   Bell,
@@ -57,6 +58,16 @@ function timeAgo(iso) {
   return new Date(iso).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+function stripHtml(html) {
+  if (!html) return '';
+  return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function cleanBodyHtml(html) {
+  if (!html) return null;
+  return stripHtml(html) ? html : null;
+}
+
 export default function NotificationsPage() {
   const { user, hasPermission } = useAuth();
   const canCreate = hasPermission('notifications', 'create');
@@ -64,9 +75,11 @@ export default function NotificationsPage() {
   const [items, setItems]       = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
+  const [detailItem, setDetailItem]           = useState(null);
 
   // Create modal
   const [showModal, setShowModal]             = useState(false);
+  const [modalKey, setModalKey]               = useState(0);
   const [createTitle, setCreateTitle]         = useState('');
   const [createBody, setCreateBody]           = useState('');
   const [targetType, setTargetType]           = useState('all');
@@ -153,6 +166,12 @@ export default function NotificationsPage() {
     ).catch(() => {});
   };
 
+  // ── Open detail ────────────────────────────────────────────────────────────
+  const openDetail = (rec) => {
+    setDetailItem(rec);
+    if (!rec.is_read) markOneRead(rec.id);
+  };
+
   // ── Open create modal + fetch roles/users ─────────────────────────────────
   const openCreateModal = async () => {
     setCreateTitle('');
@@ -163,6 +182,7 @@ export default function NotificationsPage() {
     setUserSearch('');
     setCreateError('');
     setCreateSuccess('');
+    setModalKey(k => k + 1);
     setShowModal(true);
 
     if (!IS_CONFIGURED) {
@@ -218,7 +238,7 @@ export default function NotificationsPage() {
         },
         body: JSON.stringify({
           title: createTitle.trim(),
-          body: createBody.trim() || null,
+          body: cleanBodyHtml(createBody),
           targetType,
           targetRoleId: targetType === 'role' ? targetRoleId : null,
           targetUserIds: targetType === 'user' ? targetUserIds : [],
@@ -308,14 +328,18 @@ export default function NotificationsPage() {
               <p className="text-sm font-medium">Chưa có thông báo nào</p>
             </div>
           ) : (
-            items.map((rec, idx) => {
+            items.map((rec) => {
               const notif = rec.notifications;
               const senderName = notif?.profiles?.full_name || notif?.sender_profile?.full_name || null;
               return (
-                <div
+                <button
                   key={rec.id}
-                  className={`flex gap-4 px-5 py-4 border-b border-slate-100 dark:border-slate-800/60 last:border-0 transition-colors ${
-                    !rec.is_read ? 'bg-indigo-50/40 dark:bg-indigo-900/8' : 'hover:bg-slate-50 dark:hover:bg-slate-800/20'
+                  type="button"
+                  onClick={() => openDetail(rec)}
+                  className={`w-full text-left flex gap-4 px-5 py-4 border-b border-slate-100 dark:border-slate-800/60 last:border-0 transition-colors cursor-pointer ${
+                    !rec.is_read
+                      ? 'bg-indigo-50/40 dark:bg-indigo-900/10 hover:bg-indigo-100/40 dark:hover:bg-indigo-900/20'
+                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/20'
                   }`}
                 >
                   {/* Unread dot */}
@@ -329,8 +353,8 @@ export default function NotificationsPage() {
                       {notif?.title}
                     </p>
                     {notif?.body && (
-                      <p className="text-xs text-slate-500 dark:text-gray-400 mt-1 leading-relaxed">
-                        {notif.body}
+                      <p className="text-xs text-slate-500 dark:text-gray-400 mt-1 leading-relaxed line-clamp-2">
+                        {stripHtml(notif.body)}
                       </p>
                     )}
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
@@ -340,25 +364,15 @@ export default function NotificationsPage() {
                       {senderName && (
                         <>
                           <span className="text-slate-300 dark:text-gray-700">·</span>
-                          <span className="text-[11px] text-slate-400 dark:text-gray-500">
-                            Từ: {senderName}
-                          </span>
+                          <span className="text-[11px] text-slate-400 dark:text-gray-500">Từ: {senderName}</span>
                         </>
+                      )}
+                      {!rec.is_read && (
+                        <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded-full">Mới</span>
                       )}
                     </div>
                   </div>
-
-                  {/* Mark read button */}
-                  {!rec.is_read && (
-                    <button
-                      onClick={() => markOneRead(rec.id)}
-                      className="shrink-0 self-center p-1.5 text-slate-300 dark:text-gray-600 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-xl transition-colors"
-                      title="Đánh dấu đã đọc"
-                    >
-                      <CheckCheck className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
+                </button>
               );
             })
           )}
@@ -408,18 +422,17 @@ export default function NotificationsPage() {
                     />
                   </div>
 
-                  {/* Body */}
+                  {/* Body — rich text */}
                   <div>
                     <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
                       Nội dung <span className="text-slate-400 font-normal normal-case">(tùy chọn)</span>
                     </label>
-                    <textarea
+                    <SimpleRichEditor
+                      key={modalKey}
                       value={createBody}
-                      onChange={e => setCreateBody(e.target.value)}
+                      onChange={setCreateBody}
                       placeholder="Nhập nội dung chi tiết thông báo..."
-                      rows={3}
-                      maxLength={1000}
-                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all resize-none"
+                      minHeight={110}
                     />
                   </div>
 
@@ -573,6 +586,50 @@ export default function NotificationsPage() {
                     <><Send className="h-4 w-4" /> Gửi thông báo</>
                   )}
                 </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Notification detail modal ──────────────────────────────────── */}
+      {detailItem && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-500/15 backdrop-blur-md"
+            onClick={() => setDetailItem(null)}
+          />
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh] animate-scale-up">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 px-6 py-5 border-b border-slate-200 dark:border-slate-700">
+              <h2 className="text-base font-bold text-slate-800 dark:text-white leading-snug pt-0.5">
+                {detailItem.notifications?.title}
+              </h2>
+              <button
+                onClick={() => setDetailItem(null)}
+                className="shrink-0 p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              {detailItem.notifications?.body ? (
+                <div
+                  className="text-sm text-slate-700 dark:text-gray-300 leading-relaxed rich-content"
+                  dangerouslySetInnerHTML={{ __html: detailItem.notifications.body }}
+                />
+              ) : (
+                <p className="text-sm text-slate-400 dark:text-gray-500 italic">Không có nội dung chi tiết.</p>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3 border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/80 dark:bg-slate-800/20 flex items-center justify-between text-xs text-slate-400 dark:text-gray-500">
+              <span>{timeAgo(detailItem.notifications?.created_at)}</span>
+              {(detailItem.notifications?.profiles?.full_name || detailItem.notifications?.sender_profile?.full_name) && (
+                <span>Từ: {detailItem.notifications?.profiles?.full_name || detailItem.notifications?.sender_profile?.full_name}</span>
               )}
             </div>
           </div>

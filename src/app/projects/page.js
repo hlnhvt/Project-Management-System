@@ -288,9 +288,9 @@ export default function ProjectsPage() {
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   <th className="px-6 py-4 w-[14%]">Mã dự án</th>
-                  <th className="px-6 py-4 w-[28%]">Tên dự án</th>
-                  <th className="px-6 py-4 w-[30%]">Mô tả</th>
-                  <th className="px-6 py-4 w-[10%] text-center">Trạng thái</th>
+                  <th className="px-6 py-4 w-[26%]">Tên dự án</th>
+                  <th className="px-6 py-4 w-[26%]">Mô tả</th>
+                  <th className="px-6 py-4 w-[16%] text-center">Trạng thái</th>
                   <th className="px-6 py-4 w-[8%] text-center">Sprint</th>
                   <th className="px-6 py-4 w-[10%] text-right">Thao tác</th>
                 </tr>

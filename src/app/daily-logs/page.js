@@ -28,6 +28,10 @@ import {
   Trash2,
   GripVertical,
   FolderKanban,
+  CheckSquare,
+  Link2,
+  RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 
 const MOCK_LOGS = [
@@ -36,6 +40,7 @@ const MOCK_LOGS = [
     title: 'Review sprint và hoàn thiện UI Dashboard',
     content: '<p><strong>Sáng:</strong> Họp nhóm review sprint, cập nhật tiến độ tuần.</p><p><strong>Chiều:</strong> Hoàn thiện thiết kế UI trang Dashboard, commit code lên repo.</p>',
     related_ucs: [{ uc_id: 'uc1', uc_code: 'UC-01', uc_name: 'Đăng nhập hệ thống', note: 'Kiểm tra lại flow đăng nhập' }],
+    related_links: [],
     is_approved: true, approved_by_name: 'Trần Thị Manager',
     approved_at: '2026-05-29T08:00:00Z', created_at: '2026-05-28T17:00:00Z', updated_at: '2026-05-28T17:00:00Z',
   },
@@ -44,6 +49,7 @@ const MOCK_LOGS = [
     title: 'Cài đặt Supabase',
     content: '<p>Cài đặt và cấu hình Supabase cho dự án.</p><ul><li>Tạo bảng profiles, roles, permissions</li><li>Viết RLS policies phân quyền</li><li>Seed dữ liệu ban đầu cho 4 role hệ thống</li></ul>',
     related_ucs: [],
+    related_links: [{ id: 'lk1', url: 'https://supabase.com/docs', label: 'Supabase Docs' }],
     is_approved: true, approved_by_name: 'Trần Thị Manager',
     approved_at: '2026-05-30T09:00:00Z', created_at: '2026-05-29T18:00:00Z', updated_at: '2026-05-29T18:00:00Z',
   },
@@ -55,6 +61,7 @@ const MOCK_LOGS = [
       { uc_id: 'uc2', uc_code: 'UC-02', uc_name: 'Quản lý bảng Kanban', note: '' },
       { uc_id: 'uc3', uc_code: 'UC-03', uc_name: 'Sơ đồ cây thành viên', note: 'Xem lại thiết kế mới nhất' },
     ],
+    related_links: [],
     is_approved: false, approved_by_name: null,
     approved_at: null, created_at: '2026-05-30T17:30:00Z', updated_at: '2026-05-30T17:30:00Z',
   },
@@ -63,6 +70,7 @@ const MOCK_LOGS = [
     title: 'Task history & required fields',
     content: '<p>Thêm chức năng Lịch sử thay đổi cho Kanban Board.</p><p>Bổ sung dấu <strong>(*)</strong> cho các trường bắt buộc nhập liệu trong toàn bộ hệ thống.</p>',
     related_ucs: [],
+    related_links: [],
     is_approved: false, approved_by_name: null,
     approved_at: null, created_at: '2026-06-01T09:00:00Z', updated_at: '2026-06-01T09:00:00Z',
   },
@@ -73,6 +81,7 @@ const MOCK_LOGS = [
     related_ucs: [
       { uc_id: 'uc1', uc_code: 'UC-01', uc_name: 'Đăng nhập hệ thống', note: '- có sai lệch ở bước xác thực token' },
     ],
+    related_links: [],
     is_approved: false, approved_by_name: null,
     approved_at: null, created_at: '2026-06-01T16:30:00Z', updated_at: '2026-06-01T16:30:00Z',
   },
@@ -85,7 +94,7 @@ const MOCK_TEAM = [
 ];
 
 const MOCK_UC_LIST = [
-  { id: 'uc1', code: 'UC-01', name: 'Đăng nhập hệ thống', description: 'Người dùng thực hiện đăng nhập vào hệ thống AeroTask bằng tài khoản và mật khẩu được cấp.', actors: 'Người dùng, Hệ thống xác thực', difficulty: 'Đơn giản', ba_email: 'ba@demo.com', dev_email: 'dev@demo.com' },
+  { id: 'uc1', code: 'UC-01', name: 'Đăng nhập hệ thống', description: 'Người dùng thực hiện đăng nhập vào hệ thống PROJEXA bằng tài khoản và mật khẩu được cấp.', actors: 'Người dùng, Hệ thống xác thực', difficulty: 'Đơn giản', ba_email: 'ba@demo.com', dev_email: 'dev@demo.com' },
   { id: 'uc2', code: 'UC-02', name: 'Quản lý bảng Kanban', description: 'Quản lý và cập nhật trạng thái các công việc bằng thao tác kéo thả hoặc biểu mẫu chỉnh sửa.', actors: 'Manager, Developer', difficulty: 'Phức tạp', ba_email: '', dev_email: 'dev@demo.com' },
   { id: 'uc3', code: 'UC-03', name: 'Sơ đồ cây thành viên', description: 'Xem trực quan sơ đồ tổ chức nhân sự dưới dạng cây đệ quy cha con.', actors: 'Admin, Manager', difficulty: 'Trung bình', ba_email: 'ba@demo.com', dev_email: '' },
 ];
@@ -107,6 +116,12 @@ const formatDisplayDate = (dateStr) => {
   const weekdays = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
   return `${weekdays[date.getDay()]}, ngày ${d} tháng ${m} năm ${y}`;
 };
+
+function normalizeUrl(url) {
+  if (!url) return url;
+  if (/^https?:\/\//i.test(url)) return url;
+  return 'https://' + url;
+}
 
 export default function DailyLogsPage() {
   const { user, profile, role, hasPermission } = useAuth();
@@ -167,8 +182,17 @@ export default function DailyLogsPage() {
   const [allSprints, setAllSprints] = useState([]);
   const [logProjectId, setLogProjectId] = useState('');
   const [logSprintId, setLogSprintId] = useState('');
+  const [logTaskId, setLogTaskId] = useState('');
+  const [availableTasks, setAvailableTasks] = useState([]);
   const logProjectIdRef = useRef('');
   const logSprintIdRef = useRef('');
+  const logTaskIdRef = useRef('');
+  const myFirstProjectIdRef = useRef('');
+
+  // Related document links
+  const [relatedLinks, setRelatedLinks] = useState([]);
+  const relatedLinksRef = useRef([]);
+  const [linkConfirmTarget, setLinkConfirmTarget] = useState(null); // { url, label }
 
   // UC list for @ mention
   const [ucList, setUcList] = useState(MOCK_UC_LIST);
@@ -217,6 +241,8 @@ export default function DailyLogsPage() {
   useEffect(() => { autoExtractNotesRef.current = autoExtractNotes; }, [autoExtractNotes]);
   useEffect(() => { logProjectIdRef.current = logProjectId; }, [logProjectId]);
   useEffect(() => { logSprintIdRef.current = logSprintId; }, [logSprintId]);
+  useEffect(() => { logTaskIdRef.current = logTaskId; }, [logTaskId]);
+  useEffect(() => { relatedLinksRef.current = relatedLinks; }, [relatedLinks]);
 
   // ─── Initial setup ───────────────────────────────────────────────────────────
 
@@ -283,6 +309,75 @@ export default function DailyLogsPage() {
       if (!sRes.error && sRes.data) setAllSprints(sRes.data);
     } catch { /* fall back to empty */ }
   };
+
+  // Load user's default project once projects are ready
+  useEffect(() => {
+    if (!user || isManagerOrAdmin || projects.length === 0 || myFirstProjectIdRef.current) return;
+    const load = async () => {
+      if (!isSupabaseConfigured) {
+        try {
+          const stored = JSON.parse(localStorage.getItem('aerotask_project_members') || '[]');
+          const myIds = stored.filter(m => m.user_id === user.id).map(m => m.project_id);
+          const first = projects.find(p => myIds.includes(p.id)) || projects[0];
+          if (first) myFirstProjectIdRef.current = first.id;
+        } catch {}
+        return;
+      }
+      try {
+        const { data } = await withTimeout(
+          supabase.from('project_members').select('project_id').eq('user_id', user.id)
+        );
+        if (data && data.length > 0) {
+          const myIds = data.map(m => m.project_id);
+          const first = projects.find(p => myIds.includes(p.id));
+          if (first) myFirstProjectIdRef.current = first.id;
+        }
+      } catch {}
+    };
+    load();
+  }, [user, projects.length, isSupabaseConfigured, isManagerOrAdmin]);
+
+  const fetchAvailableTasks = async (projectId) => {
+    if (!projectId) { setAvailableTasks([]); return; }
+    const statusOrder = { in_progress: 0, review: 1, todo: 2, done: 3 };
+    if (!isSupabaseConfigured) {
+      try {
+        const stored = JSON.parse(localStorage.getItem('aerotask_preview_tasks') || '[]');
+        const filtered = stored
+          .filter(t => t.project_id === projectId)
+          .sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9));
+        setAvailableTasks(filtered);
+        if (currentLogRef.current === null && !logTaskIdRef.current && filtered.length > 0) {
+          setLogTaskId(filtered[0].id);
+        }
+      } catch { setAvailableTasks([]); }
+      return;
+    }
+    try {
+      const { data } = await withTimeout(
+        supabase.from('tasks')
+          .select('id, title, status, due_date')
+          .eq('project_id', projectId)
+          .eq('assigned_to', user?.id)
+          .neq('status', 'done')
+          .order('created_at')
+      );
+      if (data) {
+        const sorted = [...data].sort((a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9));
+        setAvailableTasks(sorted);
+        if (currentLogRef.current === null && !logTaskIdRef.current && sorted.length > 0) {
+          setLogTaskId(sorted[0].id);
+        }
+      }
+    } catch { setAvailableTasks([]); }
+  };
+
+  // Fetch tasks when project changes
+  useEffect(() => {
+    if (!logProjectId) { setAvailableTasks([]); setLogTaskId(''); return; }
+    fetchAvailableTasks(logProjectId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logProjectId]);
 
   const getTargetUserId = () => {
     if (!isSupabaseConfigured) {
@@ -409,6 +504,17 @@ export default function DailyLogsPage() {
   // Keep ref in sync so saveMockLogs always has the latest value
   useEffect(() => { mockLogsRef.current = mockLogs; }, [mockLogs]);
 
+  // Điều hướng từ trang khác: đọc ngày mục tiêu từ localStorage
+  useEffect(() => {
+    const gotoDate = localStorage.getItem('aerotask_goto_log_date');
+    if (gotoDate) {
+      localStorage.removeItem('aerotask_goto_log_date');
+      setSelectedDate(gotoDate);
+      const d = new Date(gotoDate + 'T00:00:00');
+      setCalendarMonth({ year: d.getFullYear(), month: d.getMonth() });
+    }
+  }, []);
+
   useEffect(() => { fetchCalendarLogs(); }, [calendarMonth, viewingUserId, isSupabaseConfigured, mockLogs]);
   useEffect(() => { fetchDayLogs(); }, [selectedDate, viewingUserId, isSupabaseConfigured, mockLogs]);
   useEffect(() => { fetchTeamLogsForDate(); }, [selectedDate, teamMembers, isSupabaseConfigured]);
@@ -476,8 +582,10 @@ export default function DailyLogsPage() {
     if (editorRef.current) editorRef.current.innerHTML = '';
     setLogTitle('');
     setRelatedUCs([]);
-    setLogProjectId('');
+    setRelatedLinks([]);
+    setLogProjectId(myFirstProjectIdRef.current || '');
     setLogSprintId('');
+    setLogTaskId('');
     setDayLogs([]);
     setCurrentLog(null);
     setSaveStatus('saved');
@@ -490,8 +598,10 @@ export default function DailyLogsPage() {
     editorRef.current.innerHTML = currentLog.content || '';
     setLogTitle(currentLog.title || '');
     setRelatedUCs(currentLog.related_ucs || []);
+    setRelatedLinks(currentLog.related_links || []);
     setLogProjectId(currentLog.project_id || '');
     setLogSprintId(currentLog.sprint_id || '');
+    setLogTaskId(currentLog.task_id || '');
     setSaveStatus('saved');
     setSavedAt(currentLog.updated_at ? new Date(currentLog.updated_at) : null);
   }, [currentLog?.id]); // depend on ID only to avoid re-populating on every save update
@@ -517,8 +627,10 @@ export default function DailyLogsPage() {
     if (editorRef.current) editorRef.current.innerHTML = '';
     setLogTitle('');
     setRelatedUCs([]);
-    setLogProjectId('');
+    setRelatedLinks([]);
+    setLogProjectId(myFirstProjectIdRef.current || '');
     setLogSprintId('');
+    setLogTaskId('');
     setSaveStatus('saved');
     setSavedAt(null);
   };
@@ -558,6 +670,7 @@ export default function DailyLogsPage() {
     const textContent = editorRef.current.textContent?.trim();
     const title = logTitleRef.current;
     const relatedUCsData = relatedUCsRef.current;
+    const relatedLinksData = relatedLinksRef.current;
     const projectId = logProjectIdRef.current || null;
     const sprintId = logSprintIdRef.current || null;
     const log = currentLogRef.current;
@@ -565,14 +678,21 @@ export default function DailyLogsPage() {
 
     if (!textContent && !title && !log) return;
 
+    // Dự án là bắt buộc
+    if (!projectId) {
+      setSaveStatus('error');
+      return;
+    }
+
     setSaveStatus('saving');
+    const taskId = logTaskIdRef.current || null;
 
     try {
       const targetUserId = getTargetUserId();
 
       if (!isSupabaseConfigured) {
         if (log) {
-          const updated = { ...log, title, content, related_ucs: relatedUCsData, project_id: projectId, sprint_id: sprintId, updated_at: new Date().toISOString() };
+          const updated = { ...log, title, content, related_ucs: relatedUCsData, related_links: relatedLinksData, project_id: projectId, sprint_id: sprintId, task_id: taskId, updated_at: new Date().toISOString() };
           saveMockLogs(prev => prev.map(l => l.id === log.id ? updated : l));
           setDayLogs(prev => prev.map(l => l.id === log.id ? updated : l));
           currentLogRef.current = updated;
@@ -581,7 +701,8 @@ export default function DailyLogsPage() {
             id: 'log-' + Math.random().toString(36).substr(2, 9),
             user_id: targetUserId, log_date: date, title, content,
             related_ucs: relatedUCsData,
-            project_id: projectId, sprint_id: sprintId,
+            related_links: relatedLinksData,
+            project_id: projectId, sprint_id: sprintId, task_id: taskId,
             is_approved: false, approved_by_name: null, approved_at: null,
             created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
           };
@@ -598,7 +719,7 @@ export default function DailyLogsPage() {
         return;
       }
 
-      const payload = { title, content, related_ucs: relatedUCsData, project_id: projectId, sprint_id: sprintId, updated_at: new Date().toISOString() };
+      const payload = { title, content, related_ucs: relatedUCsData, related_links: relatedLinksData, project_id: projectId, sprint_id: sprintId, task_id: taskId, updated_at: new Date().toISOString() };
 
       if (log?.id) {
         const { error } = await withTimeout(
@@ -761,8 +882,21 @@ export default function DailyLogsPage() {
 
   // Called from @ mention dropdown — removes the @query text first, then inserts chip
   const insertUCChip = (uc) => {
+    // Snapshot cursor BEFORE focus() — một số browser reset selection khi focus() được gọi
+    const sel0 = window.getSelection();
+    const savedRange = sel0?.rangeCount ? sel0.getRangeAt(0).cloneRange() : null;
+
     setAtMentionOpen(false);
     editorRef.current?.focus();
+
+    // Restore vị trí con trỏ đã snapshot (tránh nhảy lên dòng trên sau focus)
+    if (savedRange) {
+      try {
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(savedRange);
+      } catch {}
+    }
 
     const selection = window.getSelection();
     if (selection?.rangeCount) {
@@ -852,7 +986,8 @@ export default function DailyLogsPage() {
       setRelatedUCs(prev => prev.map(r => {
         const segs = segments.filter(s => s.ucId === r.uc_id);
         if (segs.length === 0) return r;
-        const note = segs.map(s => s.text.trim()).filter(Boolean).join(' ');
+        // Use the text after the LAST occurrence of the chip (so @uc01 @uc01 hihi → "hihi")
+        const note = segs[segs.length - 1].text.trim();
         return { ...r, note };
       }));
     }
@@ -920,9 +1055,10 @@ export default function DailyLogsPage() {
   // ─── UC status confirmation ──────────────────────────────────────────────────
 
   const UC_STATUS_TYPES = [
-    { type: 'reviewed',      label: 'Đã rà soát',         fieldKey: 'reviewed_at',      activeClass: 'bg-violet-100 text-violet-600 dark:bg-violet-900/20 dark:text-violet-400 border-violet-200/60 dark:border-violet-700/40', hoverClass: 'hover:bg-violet-50 dark:hover:bg-violet-950/20 hover:text-violet-500 dark:hover:text-violet-400 hover:border-violet-200 dark:hover:border-violet-700' },
-    { type: 'docs_updated',  label: 'Đã cập nhật TL',     fieldKey: 'docs_updated_at',  activeClass: 'bg-sky-100 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400 border-sky-200/60 dark:border-sky-700/40',           hoverClass: 'hover:bg-sky-50 dark:hover:bg-sky-950/20 hover:text-sky-500 dark:hover:text-sky-400 hover:border-sky-200 dark:hover:border-sky-700' },
-    { type: 'dev_completed', label: 'Đã lập trình',        fieldKey: 'dev_completed_at', activeClass: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-700/40', hoverClass: 'hover:bg-emerald-50 dark:hover:bg-emerald-950/20 hover:text-emerald-500 dark:hover:text-emerald-400 hover:border-emerald-200 dark:hover:border-emerald-700' },
+    { type: 'reviewed',      label: 'Đã rà soát',         fieldKey: 'reviewed_at',      managerOnly: false, activeClass: 'bg-violet-100 text-violet-600 dark:bg-violet-900/20 dark:text-violet-400 border-violet-200/60 dark:border-violet-700/40', hoverClass: 'hover:bg-violet-50 dark:hover:bg-violet-950/20 hover:text-violet-500 dark:hover:text-violet-400 hover:border-violet-200 dark:hover:border-violet-700' },
+    { type: 'docs_updated',  label: 'Đã cập nhật tài liệu',     fieldKey: 'docs_updated_at',  managerOnly: false, activeClass: 'bg-sky-100 text-sky-600 dark:bg-sky-900/20 dark:text-sky-400 border-sky-200/60 dark:border-sky-700/40',           hoverClass: 'hover:bg-sky-50 dark:hover:bg-sky-950/20 hover:text-sky-500 dark:hover:text-sky-400 hover:border-sky-200 dark:hover:border-sky-700' },
+    { type: 'dev_completed', label: 'Đã lập trình',        fieldKey: 'dev_completed_at', managerOnly: false, activeClass: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400 border-emerald-200/60 dark:border-emerald-700/40', hoverClass: 'hover:bg-emerald-50 dark:hover:bg-emerald-950/20 hover:text-emerald-500 dark:hover:text-emerald-400 hover:border-emerald-200 dark:hover:border-emerald-700' },
+    { type: 'doc_reviewed',  label: 'Review tài liệu',     fieldKey: 'doc_reviewed_at',  managerOnly: true,  activeClass: 'bg-rose-100 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400 border-rose-200/60 dark:border-rose-700/40',  hoverClass: 'hover:bg-rose-50 dark:hover:bg-rose-950/20 hover:text-rose-500 dark:hover:text-rose-400 hover:border-rose-200 dark:hover:border-rose-700' },
   ];
 
   const handleConfirmUCStatus = async (ucId, statusType) => {
@@ -1332,9 +1468,10 @@ export default function DailyLogsPage() {
                   )
                 )}
                 {isEditable && (
-                  <span className={`text-[10px] font-medium ${saveStatus === 'saving' ? 'text-indigo-500' : saveStatus === 'unsaved' ? 'text-amber-500' : 'text-slate-400 dark:text-slate-500'}`}>
+                  <span className={`text-[10px] font-medium ${saveStatus === 'saving' ? 'text-indigo-500' : saveStatus === 'unsaved' ? 'text-amber-500' : saveStatus === 'error' ? 'text-rose-500' : 'text-slate-400 dark:text-slate-500'}`}>
                     {saveStatus === 'saving'
                       ? <span className="flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Đang lưu...</span>
+                      : saveStatus === 'error' ? 'Vui lòng chọn Dự án trước khi lưu'
                       : saveStatus === 'unsaved' ? 'Chưa lưu'
                       : savedAt ? `Đã lưu ${savedAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}` : ''}
                   </span>
@@ -1408,20 +1545,24 @@ export default function DailyLogsPage() {
               ) : null}
             </div>
 
-            {/* Project / Sprint selector */}
+            {/* Project / Sprint / Task selector */}
             {(isEditable || logProjectId) && (
-              <div className="px-5 pb-3 flex items-center gap-2 flex-wrap">
-                <FolderKanban className="h-3.5 w-3.5 text-slate-400 dark:text-slate-600 shrink-0" />
+              <div className="px-5 pb-3 flex flex-col gap-2">
                 {isEditable ? (
-                  <>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <FolderKanban className="h-3.5 w-3.5 text-slate-400 dark:text-slate-600 shrink-0" />
+                    {/* Dự án — bắt buộc */}
                     <select
                       value={logProjectId}
-                      onChange={(e) => { setLogProjectId(e.target.value); setLogSprintId(''); triggerSave(); }}
-                      className="text-xs px-2.5 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-600 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 appearance-none cursor-pointer"
+                      onChange={(e) => { setLogProjectId(e.target.value); setLogSprintId(''); setLogTaskId(''); triggerSave(); }}
+                      className={`text-xs px-2.5 py-1 bg-slate-50 dark:bg-slate-900 border rounded-lg text-slate-600 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 appearance-none cursor-pointer ${
+                        !logProjectId ? 'border-rose-400 dark:border-rose-600 text-rose-500' : 'border-slate-200 dark:border-slate-800'
+                      }`}
                     >
-                      <option value="">Chưa chọn dự án</option>
+                      <option value="">-- Chọn dự án (bắt buộc) --</option>
                       {projects.map(p => <option key={p.id} value={p.id}>[{p.code}] {p.name}</option>)}
                     </select>
+                    {/* Sprint */}
                     {logProjectId && (
                       <select
                         value={logSprintId}
@@ -1432,13 +1573,53 @@ export default function DailyLogsPage() {
                         {allSprints.filter(s => s.project_id === logProjectId).map(s => <option key={s.id} value={s.id}>[{s.code}] {s.name}</option>)}
                       </select>
                     )}
-                  </>
+                  </div>
                 ) : (
-                  <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">
-                    {projects.find(p => p.id === logProjectId)?.name || ''}
-                    {logSprintId && ` — ${allSprints.find(s => s.id === logSprintId)?.name || ''}`}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <FolderKanban className="h-3.5 w-3.5 text-slate-400 dark:text-slate-600 shrink-0" />
+                    <span className="text-xs text-indigo-600 dark:text-indigo-400 font-medium">
+                      {projects.find(p => p.id === logProjectId)?.name || ''}
+                      {logSprintId && ` — ${allSprints.find(s => s.id === logSprintId)?.name || ''}`}
+                    </span>
+                  </div>
                 )}
+
+                {/* Công việc (Task) */}
+                {isEditable && logProjectId && (
+                  <div className="flex items-center gap-2 flex-wrap pl-5">
+                    <CheckSquare className="h-3.5 w-3.5 text-slate-400 dark:text-slate-600 shrink-0" />
+                    {availableTasks.length > 0 ? (
+                      <select
+                        value={logTaskId}
+                        onChange={(e) => { setLogTaskId(e.target.value); triggerSave(); }}
+                        className="text-xs px-2.5 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-600 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 appearance-none cursor-pointer max-w-xs"
+                      >
+                        <option value="">Không gắn công việc</option>
+                        {availableTasks.map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.title}{t.due_date ? ` (hạn ${t.due_date.substring(5)})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-[11px] text-slate-400 dark:text-slate-600 italic">Không có công việc nào được giao trong dự án này</span>
+                    )}
+                    {!isEditable && logTaskId && (
+                      <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">
+                        {availableTasks.find(t => t.id === logTaskId)?.title || ''}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {!isEditable && logTaskId && (() => {
+                  const t = availableTasks.find(t => t.id === logTaskId);
+                  return t ? (
+                    <div className="flex items-center gap-2 pl-5">
+                      <CheckSquare className="h-3.5 w-3.5 text-slate-400 dark:text-slate-600 shrink-0" />
+                      <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">{t.title}</span>
+                    </div>
+                  ) : null;
+                })()}
               </div>
             )}
 
@@ -1528,6 +1709,15 @@ export default function DailyLogsPage() {
                       <span className="text-[10px] text-slate-400 dark:text-slate-600 italic hidden sm:block">
                         Gõ <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded font-bold text-indigo-600 dark:text-indigo-400 not-italic">@</code> để thêm
                       </span>
+                      {/* Manual re-extract button */}
+                      <button
+                        onClick={() => extractNotesFromContent()}
+                        title="Cập nhật lại ghi chú UC từ nội dung hiện tại"
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer select-none bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 hover:bg-amber-500/20"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        Cập nhật nội dung UC
+                      </button>
                       <button
                         onClick={() => setAutoExtractNotes(p => !p)}
                         title={autoExtractNotes ? 'Đang bật: ghi chú UC tự động trích xuất từ nội dung. Nhấn để tắt.' : 'Đang tắt: ghi chú UC nhập tay. Nhấn để bật tự động.'}
@@ -1580,25 +1770,29 @@ export default function DailyLogsPage() {
                             <div className="flex items-center gap-1 mt-1.5 flex-wrap">
                               {UC_STATUS_TYPES.map(btn => {
                                 const confirmedAt = ucStatusMap[item.uc_id]?.[btn.fieldKey];
+                                // Manager-only button: hide entirely from non-managers when not yet confirmed
+                                if (btn.managerOnly && !isManagerOrAdmin && !confirmedAt) return null;
+                                const canClick = isEditable && (!btn.managerOnly || isManagerOrAdmin);
                                 const shortDate = confirmedAt
                                   ? new Date(confirmedAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                                   : null;
                                 return (
                                   <button
                                     key={btn.type}
-                                    onClick={() => isEditable && handleConfirmUCStatus(item.uc_id, btn.type)}
+                                    onClick={() => canClick && handleConfirmUCStatus(item.uc_id, btn.type)}
                                     title={confirmedAt
-                                      ? `${btn.label}: ${new Date(confirmedAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}${isEditable ? '. Nhấn để cập nhật.' : ''}`
-                                      : isEditable ? `Xác nhận ${btn.label.toLowerCase()}` : btn.label
+                                      ? `${btn.label}: ${new Date(confirmedAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}${canClick ? '. Nhấn để cập nhật.' : ''}`
+                                      : canClick ? `Xác nhận ${btn.label.toLowerCase()}` : btn.label
                                     }
-                                    className={`inline-flex items-center gap-0.5 text-[9px] px-2 py-0.5 rounded-full border font-bold transition-all select-none ${isEditable ? 'cursor-pointer' : 'cursor-default'} ${
+                                    className={`inline-flex items-center gap-0.5 text-[9px] px-2 py-0.5 rounded-full border font-bold transition-all select-none ${canClick ? 'cursor-pointer' : 'cursor-default'} ${
                                       confirmedAt
                                         ? btn.activeClass
-                                        : `bg-slate-50 dark:bg-slate-900 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-700 ${isEditable ? btn.hoverClass : ''}`
+                                        : `bg-slate-50 dark:bg-slate-900 text-slate-400 dark:text-slate-600 border-slate-200 dark:border-slate-700 ${canClick ? btn.hoverClass : ''}`
                                     }`}
                                   >
+                                    {btn.managerOnly && <span className="mr-0.5 opacity-60">★</span>}
                                     {confirmedAt ? '✓' : '○'} {btn.label}
-                                    {shortDate && <span className="opacity-70 font-normal">{shortDate}</span>}
+                                    {shortDate && <span className="opacity-70 font-normal ml-0.5">{shortDate}</span>}
                                   </button>
                                 );
                               })}
@@ -1624,6 +1818,108 @@ export default function DailyLogsPage() {
                   isEditable && (
                     <p className="text-[11px] text-slate-300 dark:text-slate-700 italic py-1">
                       Chưa có Use Case nào được liên kết.
+                    </p>
+                  )
+                )}
+              </div>
+            )}
+
+            {/* Related Links section */}
+            {(relatedLinks.length > 0 || isEditable) && (
+              <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5 shrink-0">
+                    <Link2 className="h-3 w-3" />
+                    Tài liệu liên quan ({relatedLinks.length})
+                  </span>
+                  {isEditable && (
+                    <button
+                      onClick={() => {
+                        const newLink = { id: 'lk-' + Math.random().toString(36).substr(2, 9), url: '', label: '' };
+                        setRelatedLinks(prev => [...prev, newLink]);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold border border-dashed border-slate-300 dark:border-slate-700 text-slate-400 dark:text-slate-600 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-400 dark:hover:border-indigo-600 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 transition-all cursor-pointer"
+                    >
+                      <Plus className="h-3 w-3" /> Thêm link
+                    </button>
+                  )}
+                </div>
+
+                {relatedLinks.length > 0 ? (
+                  <div className="space-y-2.5">
+                    {relatedLinks.map((link) => (
+                      <div key={link.id} className="group">
+                        {isEditable ? (
+                          <div className="flex items-center gap-2">
+                            <Link2 className="h-3.5 w-3.5 text-indigo-400 dark:text-indigo-500 shrink-0" />
+                            <input
+                              type="text"
+                              value={link.label}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setRelatedLinks(prev => prev.map(l => l.id === link.id ? { ...l, label: val } : l));
+                                triggerSave();
+                              }}
+                              placeholder="Mô tả tài liệu..."
+                              className="w-2/5 min-w-0 text-[11px] px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-600 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-300 dark:placeholder:text-slate-700"
+                            />
+                            <input
+                              type="url"
+                              value={link.url}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setRelatedLinks(prev => prev.map(l => l.id === link.id ? { ...l, url: val } : l));
+                                triggerSave();
+                              }}
+                              placeholder="https://..."
+                              className="flex-1 min-w-0 text-[11px] px-2 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-600 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-300 dark:placeholder:text-slate-700"
+                            />
+                            {link.url && (
+                              <button
+                                type="button"
+                                onClick={() => setLinkConfirmTarget({ url: link.url, label: link.label })}
+                                className="p-1 rounded-md text-indigo-400 dark:text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-300 hover:bg-indigo-500/10 transition-colors cursor-pointer shrink-0"
+                                title="Mở liên kết"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => { setRelatedLinks(prev => prev.filter(l => l.id !== link.id)); triggerSave(); }}
+                              className="p-1 rounded-md text-slate-300 dark:text-slate-700 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-500/10 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer shrink-0"
+                              title="Xóa link"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Link2 className="h-3.5 w-3.5 text-indigo-400 dark:text-indigo-500 shrink-0" />
+                            {link.url ? (
+                              <button
+                                type="button"
+                                onClick={() => setLinkConfirmTarget({ url: link.url, label: link.label })}
+                                className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer truncate"
+                              >
+                                {link.label || link.url}
+                              </button>
+                            ) : (
+                              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                                {link.label}
+                              </span>
+                            )}
+                            {link.label && link.url && (
+                              <span className="text-[11px] text-slate-400 dark:text-slate-600 truncate min-w-0 flex-1">— {link.url}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  isEditable && (
+                    <p className="text-[11px] text-slate-300 dark:text-slate-700 italic py-1">
+                      Chưa có tài liệu liên kết nào. Nhấn "Thêm link" để thêm.
                     </p>
                   )
                 )}
@@ -1659,6 +1955,47 @@ export default function DailyLogsPage() {
 
         </div>
       </div>
+
+      {/* ── Link confirmation popup ── */}
+      {linkConfirmTarget && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-500/15 backdrop-blur-md" onClick={() => setLinkConfirmTarget(null)} />
+          <div className="relative z-10 w-full max-w-sm bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl p-6 animate-scale-up">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-9 w-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center shrink-0">
+                <ExternalLink className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Mở liên kết ngoài</h3>
+                <p className="text-xs text-slate-400 dark:text-slate-500">Bạn có muốn mở liên kết này không?</p>
+              </div>
+            </div>
+            {linkConfirmTarget.label && (
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">{linkConfirmTarget.label}</p>
+            )}
+            <p className="text-[11px] text-indigo-600 dark:text-indigo-400 font-mono break-all bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-xl px-3 py-2 mb-5">
+              {normalizeUrl(linkConfirmTarget.url)}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setLinkConfirmTarget(null)}
+                className="flex-1 py-2 rounded-xl bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 text-sm font-semibold border border-slate-200 dark:border-slate-800 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => {
+                  window.open(normalizeUrl(linkConfirmTarget.url), '_blank', 'noopener,noreferrer');
+                  setLinkConfirmTarget(null);
+                }}
+                className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold shadow-lg shadow-indigo-600/20 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> Mở tab mới
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── @ Mention dropdown ── */}
       {atMentionOpen && (

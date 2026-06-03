@@ -5,8 +5,8 @@ export const MOCK_PROJECTS = [
   {
     id: 'proj1',
     code: 'PROJ-01',
-    name: 'AeroTask System',
-    description: 'Hệ thống quản lý dự án nội bộ AeroTask.',
+    name: 'PROJEXA System',
+    description: 'Hệ thống quản lý dự án nội bộ PROJEXA.',
     status: 'active',
     created_at: '2026-01-01T00:00:00Z',
   },

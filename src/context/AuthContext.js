@@ -155,17 +155,15 @@ export function AuthProvider({ children }) {
   }, [user, pathname, loading, role, permissions, router]);
 
   // Hàm đăng nhập
+  // Không gọi setLoading(true) ở đây — nếu gọi sẽ unmount LoginPage,
+  // khiến setError() sau khi catch không có tác dụng (gọi trên unmounted component).
   const login = async (email, password) => {
-    setLoading(true);
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
-    if (error) {
-      setLoading(false);
-      throw error;
-    }
+    if (error) throw error;
 
     return data;
   };
@@ -208,12 +206,8 @@ export function AuthProvider({ children }) {
         <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-indigo-500/5 dark:bg-indigo-500/10 blur-[100px] pointer-events-none" />
         <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-80 h-80 rounded-full bg-violet-500/5 dark:bg-violet-500/10 blur-[100px] pointer-events-none" />
         <div className="flex flex-col items-center relative z-10">
-          <div className="h-16 w-16 rounded-2xl bg-indigo-50 dark:bg-indigo-600/10 border border-indigo-200 dark:border-indigo-500/30 flex items-center justify-center shadow-2xl shadow-indigo-500/5 dark:shadow-indigo-500/10 mb-4">
-            <Activity className="h-8 w-8 text-indigo-600 dark:text-indigo-400 animate-spin" style={{ animationDuration: '3s' }} />
-          </div>
-          <h2 className="text-xl font-bold tracking-wider bg-gradient-to-r from-indigo-600 to-violet-600 dark:from-indigo-400 dark:to-violet-400 bg-clip-text text-transparent mb-1">
-            AeroTask
-          </h2>
+          <img src="/logo.png" alt="PROJEXA" className="h-16 w-16 rounded-2xl object-cover shadow-2xl shadow-indigo-500/10 mb-4" />
+          <img src="/logo-name.png" alt="PROJEXA" className="h-16 object-contain mb-1" />
           <p className="text-xs text-slate-500 dark:text-gray-500 font-medium tracking-widest uppercase animate-pulse">
             Đang xác thực phiên làm việc...
           </p>

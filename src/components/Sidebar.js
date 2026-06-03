@@ -11,23 +11,26 @@ import {
   Users,
   ShieldCheck,
   LogOut,
-  Activity,
   Menu,
   X,
   Sun,
   Moon,
   CalendarDays,
   FolderKanban,
+  BarChart2,
+  ClipboardList,
 } from 'lucide-react';
 
 const ICON_MAP = {
-  dashboard: LayoutDashboard,
-  tasks: CheckSquare,
-  use_cases: FileText,
+  dashboard:  LayoutDashboard,
+  tasks:      CheckSquare,
+  use_cases:  FileText,
   daily_logs: CalendarDays,
-  projects: FolderKanban,
-  users: Users,
-  roles: ShieldCheck,
+  team_logs:  ClipboardList,
+  projects:   FolderKanban,
+  statistics: BarChart2,
+  users:      Users,
+  roles:      ShieldCheck,
 };
 import { useState, useEffect } from 'react';
 
@@ -76,12 +79,10 @@ export default function Sidebar() {
   return (
     <>
       {/* Mobile Header */}
-      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-slate-900 dark:bg-gray-950 border-b border-slate-200 dark:border-gray-900 text-slate-800 dark:text-white sticky top-0 z-40">
-        <div className="flex items-center gap-2">
-          <Activity className="h-6 w-6 text-indigo-600 dark:text-indigo-500" />
-          <span className="font-bold text-lg tracking-wider bg-gradient-to-r from-indigo-600 to-violet-600 dark:from-indigo-400 dark:to-violet-400 bg-clip-text text-transparent">
-            AeroTask
-          </span>
+      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-950 border-b border-slate-200 dark:border-gray-900 text-slate-800 dark:text-white sticky top-0 z-40">
+        <div className="flex items-center gap-1">
+          <img src="/logo.png" alt="PROJEXA" className="h-8 w-8 rounded-lg object-cover shrink-0" />
+          <img src="/logo-name.png" alt="PROJEXA" className="h-12 object-contain" />
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -114,18 +115,9 @@ export default function Sidebar() {
       `}>
         {/* Top brand logo */}
         <div className="p-6 border-b border-slate-200 dark:border-gray-900 flex items-center justify-between gap-3">
-          <Link href="/" className="flex items-center gap-3 cursor-pointer group select-none">
-            <div className="h-9 w-9 rounded-xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 transition-transform group-hover:scale-105">
-              <Activity className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <h1 className="font-bold text-lg tracking-wider bg-gradient-to-r from-indigo-600 to-violet-600 dark:from-indigo-400 dark:to-violet-400 bg-clip-text text-transparent group-hover:opacity-90">
-                AeroTask
-              </h1>
-              <p className="text-[10px] text-slate-400 dark:text-gray-500 font-medium tracking-widest uppercase">
-                Management
-              </p>
-            </div>
+          <Link href="/" className="flex items-center gap-0 cursor-pointer group select-none">
+            <img src="/logo.png" alt="PROJEXA" className="h-11 w-11 rounded-xl object-cover shadow-lg shadow-indigo-500/20 transition-transform group-hover:scale-105 shrink-0" />
+            <img src="/logo-name.png" alt="PROJEXA" className="h-16 object-contain -ml-2 group-hover:opacity-90 transition-opacity" />
           </Link>
           
           {/* Theme switcher for Desktop */}

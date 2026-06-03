@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Fragment } from 'react';
+import { useEffect, useState, Fragment, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import DashboardLayout from '@/components/DashboardLayout';
 import { supabase, withTimeout } from '@/lib/supabase';
@@ -29,14 +29,15 @@ import {
   CalendarDays,
   BookOpen,
   FolderKanban,
+  SlidersHorizontal,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 // Dữ liệu mock ban đầu cho Use Cases trong chế độ xem trước (Preview Mode)
 const MOCK_USE_CASES = [
-  { id: 'uc1', code: 'UC-01', name: 'Đăng nhập hệ thống', description: 'Người dùng thực hiện đăng nhập vào hệ thống AeroTask bằng tài khoản và mật khẩu được cấp.', notes: 'Hỗ trợ ghi nhớ mật khẩu và tự động đồng bộ theme từ localStorage.', actors: 'Người dùng, Hệ thống xác thực', ba_email: 'ba@demo.com', dev_email: 'dev@demo.com', difficulty: 'Đơn giản', bmt: 'T', created_at: '2026-05-20T08:00:00Z' },
-  { id: 'uc2', code: 'UC-02', name: 'Quản lý bảng Kanban', description: 'Quản lý và cập nhật trạng thái các công việc bằng thao tác kéo thả hoặc biểu mẫu chỉnh sửa.', notes: 'Chỉ hiển thị các nút thao tác (Thêm, Sửa, Xóa) dựa trên ma trận phân quyền RBAC.', actors: 'Manager, Developer', ba_email: '', dev_email: 'dev@demo.com', difficulty: 'Phức tạp', bmt: 'M', created_at: '2026-05-22T09:30:00Z' },
-  { id: 'uc3', code: 'UC-03', name: 'Sơ đồ cây thành viên', description: 'Xem trực quan sơ đồ tổ chức nhân sự dưới dạng cây đệ quy cha con.', notes: 'Có chức năng chống tự báo cáo cho bản thân và chống báo cáo xoay vòng vòng tròn.', actors: 'Admin, Manager', ba_email: 'ba@demo.com', dev_email: '', difficulty: 'Trung bình', bmt: 'B', created_at: '2026-05-25T10:15:00Z' },
+  { id: 'uc1', code: 'UC-01', name: 'Đăng nhập hệ thống', description: 'Người dùng thực hiện đăng nhập vào hệ thống PROJEXA bằng tài khoản và mật khẩu được cấp.', notes: 'Hỗ trợ ghi nhớ mật khẩu và tự động đồng bộ theme từ localStorage.', actors: 'Người dùng, Hệ thống xác thực', ba_email: 'ba@demo.com', dev_email: 'dev@demo.com', difficulty: 'Đơn giản', bmt: 'T', status_ba: 'Hoàn thành', status_dev: 'Đang thực hiện', status_test: 'Chưa bắt đầu', created_at: '2026-05-20T08:00:00Z' },
+  { id: 'uc2', code: 'UC-02', name: 'Quản lý bảng Kanban', description: 'Quản lý và cập nhật trạng thái các công việc bằng thao tác kéo thả hoặc biểu mẫu chỉnh sửa.', notes: 'Chỉ hiển thị các nút thao tác (Thêm, Sửa, Xóa) dựa trên ma trận phân quyền RBAC.', actors: 'Manager, Developer', ba_email: '', dev_email: 'dev@demo.com', difficulty: 'Phức tạp', bmt: 'M', status_ba: 'Đang thực hiện', status_dev: 'Chưa bắt đầu', status_test: '', created_at: '2026-05-22T09:30:00Z' },
+  { id: 'uc3', code: 'UC-03', name: 'Sơ đồ cây thành viên', description: 'Xem trực quan sơ đồ tổ chức nhân sự dưới dạng cây đệ quy cha con.', notes: 'Có chức năng chống tự báo cáo cho bản thân và chống báo cáo xoay vòng vòng tròn.', actors: 'Admin, Manager', ba_email: 'ba@demo.com', dev_email: '', difficulty: 'Trung bình', bmt: 'B', status_ba: 'Hoàn thành', status_dev: 'Hoàn thành', status_test: 'Đang thực hiện', created_at: '2026-05-25T10:15:00Z' },
 ];
 
 const MOCK_PROFILES = [
@@ -120,6 +121,9 @@ export default function UseCasesPage() {
   const [ucDev, setUcDev] = useState('');
   const [ucProjectId, setUcProjectId] = useState('');
   const [ucSprintId, setUcSprintId] = useState('');
+  const [ucStatusBA, setUcStatusBA] = useState('');
+  const [ucStatusDev, setUcStatusDev] = useState('');
+  const [ucStatusTest, setUcStatusTest] = useState('');
 
   // Danh sách dự án và sprint
   const [projects, setProjects] = useState([]);
@@ -160,6 +164,37 @@ export default function UseCasesPage() {
   // Trạng thái Chọn nhiều bản ghi để Xóa hàng loạt
   const [selectedUseCases, setSelectedUseCases] = useState({});
 
+  const [colWidths, setColWidths] = useState(() => {
+    const defaults = {
+      code: 100, name: 180, description: 220, difficulty: 100, bmt: 70,
+      ba: 140, dev: 140, status_ba: 120, status_dev: 120, status_test: 120,
+      reviewed_at: 120, docs_updated_at: 130, dev_completed_at: 120, doc_reviewed_at: 130,
+    };
+    if (typeof window === 'undefined') return defaults;
+    try {
+      const saved = localStorage.getItem('projexa_uc_col_widths');
+      if (saved) return { ...defaults, ...JSON.parse(saved) };
+    } catch {}
+    return defaults;
+  });
+  const [visibleCols, setVisibleCols] = useState(() => {
+    const defaults = {
+      code: true, name: true, description: true, difficulty: true, bmt: true,
+      ba: true, dev: true, status_ba: true, status_dev: true, status_test: true,
+      reviewed_at: true, docs_updated_at: true, dev_completed_at: true, doc_reviewed_at: true,
+    };
+    if (typeof window === 'undefined') return defaults;
+    try {
+      const saved = localStorage.getItem('projexa_uc_visible_cols');
+      if (saved) return { ...defaults, ...JSON.parse(saved) };
+    } catch {}
+    return defaults;
+  });
+  const [showColPanel, setShowColPanel] = useState(false);
+  const resizingCol = useRef(null);
+  const resizeStartX = useRef(0);
+  const resizeStartW = useRef(0);
+
   useEffect(() => {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -190,6 +225,20 @@ export default function UseCasesPage() {
       if (logs) setUcStatusLogs(JSON.parse(logs));
     } catch {}
   }, []);
+
+  // Lưu trạng thái ẩn/hiện cột vào localStorage mỗi khi thay đổi
+  useEffect(() => {
+    try {
+      localStorage.setItem('projexa_uc_visible_cols', JSON.stringify(visibleCols));
+    } catch {}
+  }, [visibleCols]);
+
+  // Lưu độ rộng cột vào localStorage mỗi khi thay đổi
+  useEffect(() => {
+    try {
+      localStorage.setItem('projexa_uc_col_widths', JSON.stringify(colWidths));
+    } catch {}
+  }, [colWidths]);
 
   // Load project memberships cho user hiện tại (ngoại trừ Admin/Manager — họ thấy tất cả)
   useEffect(() => {
@@ -436,6 +485,9 @@ export default function UseCasesPage() {
           dev_email: ucDev,
           difficulty: ucDifficulty,
           bmt: ucBMT,
+          status_ba: ucStatusBA,
+          status_dev: ucStatusDev,
+          status_test: ucStatusTest,
           project_id: ucProjectId || null,
           sprint_id: ucSprintId || null,
           created_at: new Date().toISOString()
@@ -475,6 +527,9 @@ export default function UseCasesPage() {
           dev_email: ucDev || null,
           difficulty: ucDifficulty,
           bmt: ucBMT,
+          status_ba: ucStatusBA || null,
+          status_dev: ucStatusDev || null,
+          status_test: ucStatusTest || null,
           project_id: ucProjectId || null,
           sprint_id: ucSprintId || null,
         })
@@ -527,7 +582,10 @@ export default function UseCasesPage() {
     setUcBMT(uc.bmt);
     setUcProjectId(uc.project_id || '');
     setUcSprintId(uc.sprint_id || '');
-    
+    setUcStatusBA(uc.status_ba || '');
+    setUcStatusDev(uc.status_dev || '');
+    setUcStatusTest(uc.status_test || '');
+
     // Tải các transactions trực thuộc của UC này
     const relatedTxs = transactions.filter(t => t.use_case_id === uc.id);
     setUcTransactions(
@@ -577,6 +635,9 @@ export default function UseCasesPage() {
               dev_email: ucDev,
               difficulty: ucDifficulty,
               bmt: ucBMT,
+              status_ba: ucStatusBA,
+              status_dev: ucStatusDev,
+              status_test: ucStatusTest,
               project_id: ucProjectId || null,
               sprint_id: ucSprintId || null,
             };
@@ -621,6 +682,9 @@ export default function UseCasesPage() {
           dev_email: ucDev || null,
           difficulty: ucDifficulty,
           bmt: ucBMT,
+          status_ba: ucStatusBA || null,
+          status_dev: ucStatusDev || null,
+          status_test: ucStatusTest || null,
           project_id: ucProjectId || null,
           sprint_id: ucSprintId || null,
         })
@@ -711,9 +775,12 @@ export default function UseCasesPage() {
       "Ghi chú",
       "Tác nhân liên quan",
       "Email BA phụ trách",
-      "Dev phụ trách",
+      "Email Dev phụ trách",
       "Đánh giá mức độ khó",
       "Đánh giá BMT",
+      "Trạng thái BA",
+      "Trạng thái DEV",
+      "Trạng thái TEST",
       "Danh sách Transactions",
       "Mã Dự Án",
       "Mã Sprint"
@@ -724,13 +791,16 @@ export default function UseCasesPage() {
       [
         "UC-01",
         "Đăng nhập hệ thống",
-        "Người dùng thực hiện đăng nhập vào hệ thống AeroTask bằng tài khoản và mật khẩu được cấp.",
+        "Người dùng thực hiện đăng nhập vào hệ thống PROJEXA bằng tài khoản và mật khẩu được cấp.",
         "Tự động khóa tài khoản sau 5 lần nhập sai mật khẩu liên tiếp.",
         "Người dùng, Hệ thống xác thực",
         "ba@company.com",
-        "Nguyễn Văn Dev",
+        "dev@company.com",
         "Đơn giản",
         "T",
+        "Hoàn thành",
+        "Đang thực hiện",
+        "Chưa bắt đầu",
         "TX-01: Nhập địa chỉ email và mật khẩu, TX-02: Gửi thông tin đăng nhập xác thực, TX-03: Điều hướng người dùng tới Dashboard",
         "PROJ-01",
         "S01"
@@ -742,9 +812,12 @@ export default function UseCasesPage() {
         "Yêu cầu xử lý chống tự báo cáo cho chính bản thân và chống báo cáo xoay vòng.",
         "Admin, Manager",
         "",
-        "Nguyễn Văn Dev",
+        "dev@company.com",
         "Trung bình",
         "B",
+        "Đang thực hiện",
+        "Chưa bắt đầu",
+        "",
         "TX-01: Tải dữ liệu profiles từ DB, TX-02: Phân tích cấu trúc đệ quy, TX-03: Hiển thị các symbol connector ├── thụt lề trực quan",
         "",
         ""
@@ -767,6 +840,9 @@ export default function UseCasesPage() {
       { wch: 28 }, // Dev email
       { wch: 20 }, // Độ khó
       { wch: 15 }, // BMT
+      { wch: 22 }, // Trạng thái BA
+      { wch: 22 }, // Trạng thái DEV
+      { wch: 22 }, // Trạng thái TEST
       { wch: 60 }, // Transactions
       { wch: 15 }, // Mã Dự Án
       { wch: 15 }, // Mã Sprint
@@ -774,10 +850,10 @@ export default function UseCasesPage() {
     ws['!cols'] = wscols;
 
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "AeroTask Use Cases");
+    XLSX.utils.book_append_sheet(wb, ws, "PROJEXA Use Cases");
 
     // Xuất tệp tải xuống
-    XLSX.writeFile(wb, "AeroTask_Template_Use_Cases.xlsx");
+    XLSX.writeFile(wb, "PROJEXA_Template_Use_Cases.xlsx");
   };
 
   // Đọc và Import dữ liệu từ file Excel tải lên
@@ -818,8 +894,11 @@ export default function UseCasesPage() {
           const actors = String(row[4] || '').trim();
           const ba_email = String(row[5] || '').trim().toLowerCase();
           const dev_email = String(row[6] || '').trim().toLowerCase();
-          const projectCode = String(row[10] || '').trim().toUpperCase();
-          const sprintCode = String(row[11] || '').trim().toUpperCase();
+          const status_ba = String(row[9] || '').trim();
+          const status_dev = String(row[10] || '').trim();
+          const status_test = String(row[11] || '').trim();
+          const projectCode = String(row[13] || '').trim().toUpperCase();
+          const sprintCode = String(row[14] || '').trim().toUpperCase();
           const matchedProject = projectCode ? projects.find(p => p.code.toUpperCase() === projectCode) : null;
           const matchedSprint = sprintCode && matchedProject
             ? allSprints.find(s => s.project_id === matchedProject.id && s.code.toUpperCase() === sprintCode)
@@ -834,6 +913,7 @@ export default function UseCasesPage() {
             bmt = 'B';
           }
 
+          const VALID_STATUSES = ['Hoàn thành', 'Đang thực hiện', 'Bị chặn', 'Chưa bắt đầu', ''];
           const validationErrors = [];
           if (!code) {
             validationErrors.push('Mã Use Case không được để trống.');
@@ -847,13 +927,22 @@ export default function UseCasesPage() {
           if (bmt && !['B', 'M', 'T'].includes(bmt)) {
             validationErrors.push(`Đánh giá BMT "${bmt}" không hợp lệ (Phải là B, M, T).`);
           }
+          if (status_ba && !VALID_STATUSES.includes(status_ba)) {
+            validationErrors.push(`Trạng thái BA "${status_ba}" không hợp lệ.`);
+          }
+          if (status_dev && !VALID_STATUSES.includes(status_dev)) {
+            validationErrors.push(`Trạng thái DEV "${status_dev}" không hợp lệ.`);
+          }
+          if (status_test && !VALID_STATUSES.includes(status_test)) {
+            validationErrors.push(`Trạng thái TEST "${status_test}" không hợp lệ.`);
+          }
           // Kiểm tra email BA có tồn tại trong hệ thống không
           if (ba_email && !profiles.some(p => p.email.toLowerCase() === ba_email)) {
             validationErrors.push(`Email BA phụ trách "${ba_email}" không tìm thấy trong hệ thống.`);
           }
 
           // Bóc tách transactions trực thuộc
-          const txString = String(row[9] || '').trim();
+          const txString = String(row[12] || '').trim();
           const txList = [];
           if (txString) {
             const txTokens = txString.split(/[,;]+/);
@@ -902,6 +991,9 @@ export default function UseCasesPage() {
             dev_email,
             difficulty,
             bmt,
+            status_ba,
+            status_dev,
+            status_test,
             project_id: matchedProject?.id || null,
             sprint_id: matchedSprint?.id || null,
             transactions: txList,
@@ -953,6 +1045,9 @@ export default function UseCasesPage() {
             dev_email: v.dev_email || '',
             difficulty: v.difficulty,
             bmt: v.bmt,
+            status_ba: v.status_ba || '',
+            status_dev: v.status_dev || '',
+            status_test: v.status_test || '',
             project_id: v.project_id || null,
             sprint_id: v.sprint_id || null,
             created_at: new Date().toISOString()
@@ -1000,6 +1095,9 @@ export default function UseCasesPage() {
             dev_email: uc.dev_email || null,
             difficulty: uc.difficulty,
             bmt: uc.bmt,
+            status_ba: uc.status_ba || null,
+            status_dev: uc.status_dev || null,
+            status_test: uc.status_test || null,
             project_id: uc.project_id || null,
             sprint_id: uc.sprint_id || null,
           }, {
@@ -1174,6 +1272,55 @@ export default function UseCasesPage() {
     }
   };
 
+  const handleColResizeStart = (col, e) => {
+    e.preventDefault();
+    resizingCol.current = col;
+    resizeStartX.current = e.clientX;
+    resizeStartW.current = colWidths[col];
+    const onMove = (ev) => {
+      const diff = ev.clientX - resizeStartX.current;
+      setColWidths(prev => ({ ...prev, [resizingCol.current]: Math.max(60, resizeStartW.current + diff) }));
+    };
+    const onUp = () => {
+      resizingCol.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'Hoàn thành':      return 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
+      case 'Đang thực hiện':  return 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20';
+      case 'Bị chặn':         return 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20';
+      case 'Chưa bắt đầu':   return 'bg-slate-500/10 text-slate-500 dark:text-slate-400 border-slate-500/20';
+      default: return '';
+    }
+  };
+
+  const COLS = [
+    { key: 'code',            label: 'Mã Use Case',          locked: true },
+    { key: 'name',            label: 'Tên Use Case',          locked: true },
+    { key: 'description',     label: 'Mô tả nghiệp vụ' },
+    { key: 'difficulty',      label: 'Độ khó' },
+    { key: 'bmt',             label: 'Phân loại BMT' },
+    { key: 'ba',              label: 'BA phụ trách' },
+    { key: 'dev',             label: 'Dev phụ trách' },
+    { key: 'status_ba',       label: 'Trạng thái BA' },
+    { key: 'status_dev',      label: 'Trạng thái DEV' },
+    { key: 'status_test',     label: 'Trạng thái TEST' },
+    { key: 'reviewed_at',     label: 'Ngày rà soát BA' },
+    { key: 'docs_updated_at', label: 'Cập nhật tài liệu' },
+    { key: 'dev_completed_at',label: 'Hoàn thành lập trình' },
+    { key: 'doc_reviewed_at', label: 'Review tài liệu' },
+  ];
+
+  const tableMinWidth = 40 + 96 + COLS
+    .filter(c => visibleCols[c.key])
+    .reduce((sum, c) => sum + (colWidths[c.key] || 100), 0);
+
   // Dự án hiển thị trong bộ lọc: Admin/Manager thấy tất cả, các role khác chỉ thấy dự án của mình
   const visibleProjects = isManagerOrAdmin || myProjectIds.size === 0
     ? projects
@@ -1287,7 +1434,39 @@ export default function UseCasesPage() {
         </div>
 
         {/* Action bar (Search & Filters) */}
-        <div className="flex flex-col lg:flex-row items-center justify-between gap-4 bg-white dark:bg-slate-900/35 border border-slate-200 dark:border-slate-800/80 p-4 rounded-2xl shadow-sm dark:shadow-none">
+        <div className="flex flex-col gap-3 bg-white dark:bg-slate-900/35 border border-slate-200 dark:border-slate-800/80 p-4 rounded-2xl shadow-sm dark:shadow-none">
+
+          {/* Hàng 1: Bộ lọc Dự án — nổi bật */}
+          {visibleProjects.length > 0 && (
+            <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-indigo-50 dark:bg-indigo-600/10 border border-indigo-200 dark:border-indigo-500/30">
+              <FolderKanban className="h-4 w-4 text-indigo-500 dark:text-indigo-400 shrink-0" />
+              <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider shrink-0">Dự án:</span>
+              <select
+                value={filterProject}
+                onChange={(e) => setFilterProject(e.target.value)}
+                className="flex-1 max-w-sm px-3 py-2 bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-500/40 rounded-xl text-sm font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 cursor-pointer appearance-none shadow-sm"
+              >
+                <option value="">Tất cả dự án</option>
+                {visibleProjects.map(p => (
+                  <option key={p.id} value={p.id}>
+                    [{p.code}] {p.name}
+                  </option>
+                ))}
+              </select>
+              {filterProject && (
+                <button
+                  onClick={() => setFilterProject('')}
+                  className="p-1.5 rounded-lg text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors cursor-pointer shrink-0"
+                  title="Bỏ lọc dự án"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Hàng 2: Search + các bộ lọc phụ */}
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-3">
           <div className="relative w-full lg:max-w-xs">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-500" />
             <input
@@ -1350,25 +1529,6 @@ export default function UseCasesPage() {
               </select>
             </div>
 
-            {/* Lọc Dự án */}
-            {visibleProjects.length > 0 && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Dự án:</span>
-                <select
-                  value={filterProject}
-                  onChange={(e) => setFilterProject(e.target.value)}
-                  className="px-3 py-2 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer appearance-none min-w-[140px]"
-                >
-                  <option value="" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300">Tất cả</option>
-                  {visibleProjects.map(p => (
-                    <option key={p.id} value={p.id} className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300">
-                      [{p.code}] {p.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
             {/* Sắp xếp */}
             <div className="flex items-center gap-1.5 border-l border-slate-200 dark:border-slate-800 pl-3">
               <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Sắp xếp:</span>
@@ -1393,9 +1553,51 @@ export default function UseCasesPage() {
               </button>
             </div>
             
-            <div className="text-[11px] text-slate-400 dark:text-slate-500 font-medium ml-auto lg:ml-0">
+            {/* Nút hiển thị/ẩn cột */}
+            <div className="relative ml-auto lg:ml-0">
+              <button
+                type="button"
+                onClick={() => setShowColPanel(p => !p)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950/65 hover:bg-indigo-50 dark:hover:bg-indigo-600/10 border border-slate-200 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-500/40 text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all cursor-pointer text-xs font-bold uppercase tracking-wider shrink-0"
+                title="Ẩn / hiện cột"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Cột
+              </button>
+              {showColPanel && (
+                <div className="absolute right-0 top-full mt-2 z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-xl dark:shadow-2xl p-3 min-w-[200px] animate-fade-in">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">Hiển thị cột</p>
+                  <div className="space-y-0.5">
+                    {COLS.map(c => (
+                      <label key={c.key} className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${c.locked ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        <input
+                          type="checkbox"
+                          checked={visibleCols[c.key]}
+                          disabled={c.locked}
+                          onChange={() => !c.locked && setVisibleCols(prev => ({ ...prev, [c.key]: !prev[c.key] }))}
+                          className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed"
+                        />
+                        <span className="text-xs text-slate-700 dark:text-slate-300 font-medium select-none">{c.label}</span>
+                        {c.locked && <span className="text-[9px] text-slate-400 ml-auto">Bắt buộc</span>}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                    <button
+                      onClick={() => setShowColPanel(false)}
+                      className="text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-medium cursor-pointer"
+                    >
+                      Đóng
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
               Tổng số hiển thị: <span className="font-bold text-indigo-600 dark:text-indigo-400">{filteredUseCases.length}</span> Use Cases
             </div>
+          </div>
           </div>
         </div>
 
@@ -1429,10 +1631,10 @@ export default function UseCasesPage() {
           ) : (
             <>
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+              <table className="text-left border-collapse" style={{ minWidth: tableMinWidth, tableLayout: 'fixed' }}>
                 <thead>
                   <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider select-none">
-                    <th className="px-4 py-3 w-10 text-center select-none">
+                    <th className="px-4 py-3 text-center select-none" style={{ width: 40, minWidth: 40 }}>
                       <input
                         type="checkbox"
                         checked={filteredUseCases.length > 0 && filteredUseCases.every(uc => selectedUseCases[uc.id])}
@@ -1440,17 +1642,18 @@ export default function UseCasesPage() {
                         className="w-4 h-4 rounded border-slate-300 dark:border-slate-800 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                       />
                     </th>
-                    <th className="px-4 py-3 min-w-[90px]">Mã UC</th>
-                    <th className="px-4 py-3 min-w-[160px]">Tên Use Case</th>
-                    <th className="px-4 py-3 min-w-[200px]">Mô tả</th>
-                    <th className="px-4 py-3 min-w-[90px] text-center">Độ khó</th>
-                    <th className="px-4 py-3 min-w-[65px] text-center">BMT</th>
-                    <th className="px-4 py-3 min-w-[130px]">BA phụ trách</th>
-                    <th className="px-4 py-3 min-w-[130px]">Dev phụ trách</th>
-                    <th className="px-4 py-3 min-w-[110px] text-center">Rà soát</th>
-                    <th className="px-4 py-3 min-w-[120px] text-center">Cập nhật TL</th>
-                    <th className="px-4 py-3 min-w-[110px] text-center">Lập trình</th>
-                    <th className="px-4 py-3 min-w-[90px] text-right">Thao tác</th>
+                    {COLS.filter(c => visibleCols[c.key]).map(({ key, label }) => (
+                      <th key={key} className="relative px-4 py-3 overflow-hidden whitespace-nowrap" style={{ width: colWidths[key], minWidth: 60 }}>
+                        <span className="block truncate text-center pr-3">{label}</span>
+                        <div
+                          className="absolute inset-y-0 right-0 w-3 cursor-col-resize z-10 flex items-stretch justify-end"
+                          onMouseDown={(e) => handleColResizeStart(key, e)}
+                        >
+                          <div className="w-[2px] h-full bg-slate-200 dark:bg-slate-700 hover:bg-indigo-400 transition-colors" />
+                        </div>
+                      </th>
+                    ))}
+                    <th className="px-4 py-3 text-right" style={{ width: 96, minWidth: 96 }}>Thao tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60">
@@ -1471,8 +1674,9 @@ export default function UseCasesPage() {
                               className="w-4 h-4 rounded border-slate-300 dark:border-slate-800 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                             />
                           </td>
-                          <td className="px-4 py-3 font-bold text-sm text-indigo-600 dark:text-indigo-400 select-all">
-                            <div className="flex items-center gap-1.5">
+                          {/* code — always visible (locked) */}
+                          <td className="px-4 py-3 font-bold text-sm text-indigo-600 dark:text-indigo-400 select-all overflow-hidden" style={{ width: colWidths.code }}>
+                            <div className="flex items-center gap-1.5 truncate">
                               {txCount > 0 ? (
                                 isExpanded ? (
                                   <ChevronDown className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500 shrink-0" />
@@ -1482,59 +1686,86 @@ export default function UseCasesPage() {
                               ) : (
                                 <span className="w-3.5 h-3.5 shrink-0" />
                               )}
-                              {uc.code}
+                              <span className="truncate">{uc.code}</span>
                             </div>
                           </td>
-                          <td className="px-4 py-3 min-w-0">
-                            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 block group-hover:text-slate-950 dark:group-hover:text-white transition-colors line-clamp-2">
+                          {/* name — always visible (locked) */}
+                          <td className="px-4 py-3 overflow-hidden" style={{ width: colWidths.name }}>
+                            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 block truncate group-hover:text-slate-950 dark:group-hover:text-white transition-colors">
                               {uc.name}
                             </span>
                           </td>
-                          <td className="px-4 py-3 min-w-0">
-                            <span className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
-                              {uc.description || <span className="text-slate-300 dark:text-slate-700 italic">—</span>}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-center select-none">
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0 inline-block ${getDifficultyBadgeStyle(uc.difficulty)}`}>
-                              {uc.difficulty}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-center select-none">
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0 inline-block ${getBMTBadgeStyle(uc.bmt)}`} title={
-                              uc.bmt === 'B' ? 'Báo cáo (Report)' : uc.bmt === 'M' ? 'Nghiệp vụ (Master)' : 'Giao dịch (Transaction)'
-                            }>
-                              {uc.bmt}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            {(() => {
-                              const p = profiles.find(p => p.email === uc.ba_email);
-                              return p ? (
-                                <span className="text-xs text-slate-700 dark:text-slate-300 font-medium">{p.full_name}</span>
-                              ) : uc.ba_email ? (
-                                <span className="text-xs text-slate-400 dark:text-slate-500 font-mono truncate block max-w-[120px]">{uc.ba_email}</span>
-                              ) : <span className="text-slate-300 dark:text-slate-700 text-xs">—</span>;
-                            })()}
-                          </td>
-                          <td className="px-4 py-3">
-                            {(() => {
-                              const p = profiles.find(p => p.email === uc.dev_email);
-                              return p ? (
-                                <span className="text-xs text-slate-700 dark:text-slate-300 font-medium">{p.full_name}</span>
-                              ) : uc.dev_email ? (
-                                <span className="text-xs text-slate-400 dark:text-slate-500 font-mono truncate block max-w-[120px]">{uc.dev_email}</span>
-                              ) : <span className="text-slate-300 dark:text-slate-700 text-xs">—</span>;
-                            })()}
-                          </td>
+                          {visibleCols.description && (
+                            <td className="px-4 py-3 overflow-hidden" style={{ width: colWidths.description }}>
+                              <span className="text-xs text-slate-500 dark:text-slate-400 truncate leading-relaxed block">
+                                {uc.description || <span className="text-slate-300 dark:text-slate-700 italic">—</span>}
+                              </span>
+                            </td>
+                          )}
+                          {visibleCols.difficulty && (
+                            <td className="px-4 py-3 text-center select-none" style={{ width: colWidths.difficulty }}>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0 inline-block ${getDifficultyBadgeStyle(uc.difficulty)}`}>
+                                {uc.difficulty}
+                              </span>
+                            </td>
+                          )}
+                          {visibleCols.bmt && (
+                            <td className="px-4 py-3 text-center select-none" style={{ width: colWidths.bmt }}>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0 inline-block ${getBMTBadgeStyle(uc.bmt)}`} title={
+                                uc.bmt === 'B' ? 'Báo cáo (Report)' : uc.bmt === 'M' ? 'Nghiệp vụ (Master)' : 'Giao dịch (Transaction)'
+                              }>
+                                {uc.bmt}
+                              </span>
+                            </td>
+                          )}
+                          {visibleCols.ba && (
+                            <td className="px-4 py-3 overflow-hidden" style={{ width: colWidths.ba }}>
+                              {(() => {
+                                const p = profiles.find(p => p.email === uc.ba_email);
+                                return p ? (
+                                  <span className="text-xs text-slate-700 dark:text-slate-300 font-medium truncate block">{p.full_name}</span>
+                                ) : uc.ba_email ? (
+                                  <span className="text-xs text-slate-400 dark:text-slate-500 font-mono truncate block">{uc.ba_email}</span>
+                                ) : <span className="text-slate-300 dark:text-slate-700 text-xs">—</span>;
+                              })()}
+                            </td>
+                          )}
+                          {visibleCols.dev && (
+                            <td className="px-4 py-3 overflow-hidden" style={{ width: colWidths.dev }}>
+                              {(() => {
+                                const p = profiles.find(p => p.email === uc.dev_email);
+                                return p ? (
+                                  <span className="text-xs text-slate-700 dark:text-slate-300 font-medium truncate block">{p.full_name}</span>
+                                ) : uc.dev_email ? (
+                                  <span className="text-xs text-slate-400 dark:text-slate-500 font-mono truncate block">{uc.dev_email}</span>
+                                ) : <span className="text-slate-300 dark:text-slate-700 text-xs">—</span>;
+                              })()}
+                            </td>
+                          )}
+                          {[
+                            { key: 'status_ba',   val: uc.status_ba,   w: colWidths.status_ba },
+                            { key: 'status_dev',  val: uc.status_dev,  w: colWidths.status_dev },
+                            { key: 'status_test', val: uc.status_test, w: colWidths.status_test },
+                          ].filter(s => visibleCols[s.key]).map(({ key, val, w }) => (
+                            <td key={key} className="px-4 py-3 text-center select-none whitespace-nowrap" style={{ width: w }}>
+                              {val ? (
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border inline-block ${getStatusBadge(val)}`}>
+                                  {val}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300 dark:text-slate-700 text-xs">—</span>
+                              )}
+                            </td>
+                          ))}
                           {[
                             { key: 'reviewed_at',      textCls: 'text-violet-600 dark:text-violet-400' },
                             { key: 'docs_updated_at',  textCls: 'text-sky-600 dark:text-sky-400' },
                             { key: 'dev_completed_at', textCls: 'text-emerald-600 dark:text-emerald-400' },
-                          ].map(s => {
+                            { key: 'doc_reviewed_at',  textCls: 'text-rose-600 dark:text-rose-400' },
+                          ].filter(s => visibleCols[s.key]).map(s => {
                             const at = ucStatusMap[uc.id]?.[s.key] || uc[s.key] || null;
                             return (
-                              <td key={s.key} className="px-4 py-3 text-center select-none">
+                              <td key={s.key} className="px-4 py-3 text-center select-none overflow-hidden" style={{ width: colWidths[s.key] }}>
                                 {at ? (
                                   <span className={`text-[10px] font-semibold ${s.textCls}`}>
                                     {new Date(at).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -1580,7 +1811,7 @@ export default function UseCasesPage() {
                         </tr>
                         {isExpanded && (
                           <tr className="bg-slate-50/30 dark:bg-slate-950/10">
-                            <td colSpan={12} className="px-8 py-3.5 border-t border-b border-slate-200/50 dark:border-slate-800/50">
+                            <td colSpan={2 + COLS.filter(c => visibleCols[c.key]).length} className="px-8 py-3.5 border-t border-b border-slate-200/50 dark:border-slate-800/50">
                               <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-inner bg-white dark:bg-slate-900/30 w-full p-4 space-y-4">
                                 
                                 {/* Thông tin chi tiết Use Case */}
@@ -1979,6 +2210,30 @@ export default function UseCasesPage() {
                   </div>
                 </div>
 
+                {/* Status BA / Dev / Test */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: 'Trạng thái BA',   val: ucStatusBA,   set: setUcStatusBA },
+                    { label: 'Trạng thái DEV',  val: ucStatusDev,  set: setUcStatusDev },
+                    { label: 'Trạng thái TEST', val: ucStatusTest, set: setUcStatusTest },
+                  ].map(({ label, val, set }) => (
+                    <div key={label}>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">{label}</label>
+                      <select
+                        value={val}
+                        onChange={(e) => set(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer appearance-none"
+                      >
+                        <option value="">— Chưa xác định —</option>
+                        <option value="Chưa bắt đầu">Chưa bắt đầu</option>
+                        <option value="Đang thực hiện">Đang thực hiện</option>
+                        <option value="Hoàn thành">Hoàn thành</option>
+                        <option value="Bị chặn">Bị chặn</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+
                 {/* Project & Sprint */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -2265,9 +2520,10 @@ export default function UseCasesPage() {
                   reviewed_at:      localStatus.reviewed_at      || viewUC.reviewed_at      || null,
                   docs_updated_at:  localStatus.docs_updated_at  || viewUC.docs_updated_at  || null,
                   dev_completed_at: localStatus.dev_completed_at || viewUC.dev_completed_at || null,
+                  doc_reviewed_at:  localStatus.doc_reviewed_at  || viewUC.doc_reviewed_at  || null,
                 };
                 const logsForUC = ucStatusLogs.filter(l => l.uc_id === viewUC.id);
-                const hasAny = statusForUC.reviewed_at || statusForUC.docs_updated_at || statusForUC.dev_completed_at;
+                const hasAny = statusForUC.reviewed_at || statusForUC.docs_updated_at || statusForUC.dev_completed_at || statusForUC.doc_reviewed_at;
                 if (!hasAny && logsForUC.length === 0 && !ucStatusLogsLoading) return null;
                 return (
                   <div className="space-y-2.5 pt-1">
@@ -2275,11 +2531,12 @@ export default function UseCasesPage() {
                       <Check className="h-3 w-3" />
                       Trạng thái thực hiện
                     </span>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       {[
                         { key: 'reviewed_at',      label: 'Rà soát',        cls: 'bg-violet-50 border-violet-200/60 dark:bg-violet-900/10 dark:border-violet-800/40', textCls: 'text-violet-600 dark:text-violet-400' },
-                        { key: 'docs_updated_at',  label: 'Cập nhật TL',    cls: 'bg-sky-50 border-sky-200/60 dark:bg-sky-900/10 dark:border-sky-800/40',           textCls: 'text-sky-600 dark:text-sky-400' },
+                        { key: 'docs_updated_at',  label: 'Cập nhật tài liệu',    cls: 'bg-sky-50 border-sky-200/60 dark:bg-sky-900/10 dark:border-sky-800/40',           textCls: 'text-sky-600 dark:text-sky-400' },
                         { key: 'dev_completed_at', label: 'Lập trình',      cls: 'bg-emerald-50 border-emerald-200/60 dark:bg-emerald-900/10 dark:border-emerald-800/40', textCls: 'text-emerald-600 dark:text-emerald-400' },
+                        { key: 'doc_reviewed_at',  label: 'Review tài liệu',    cls: 'bg-rose-50 border-rose-200/60 dark:bg-rose-900/10 dark:border-rose-800/40',        textCls: 'text-rose-600 dark:text-rose-400' },
                       ].map(s => {
                         const at = statusForUC[s.key];
                         return (
@@ -2303,9 +2560,10 @@ export default function UseCasesPage() {
                         <div className="max-h-[160px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/50 rounded-xl border border-slate-200/60 dark:border-slate-800/40 overflow-hidden">
                           {logsForUC.map(entry => {
                             const meta = {
-                              reviewed:      { label: 'Rà soát',     cls: 'bg-violet-500/10 text-violet-600 dark:text-violet-400' },
-                              docs_updated:  { label: 'Cập nhật TL', cls: 'bg-sky-500/10 text-sky-600 dark:text-sky-400' },
-                              dev_completed: { label: 'Lập trình',   cls: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+                              reviewed:      { label: 'Rà soát',        cls: 'bg-violet-500/10 text-violet-600 dark:text-violet-400' },
+                              docs_updated:  { label: 'Cập nhật tài liệu',    cls: 'bg-sky-500/10 text-sky-600 dark:text-sky-400' },
+                              dev_completed: { label: 'Lập trình',      cls: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
+                              doc_reviewed:  { label: 'Review tài liệu',    cls: 'bg-rose-500/10 text-rose-600 dark:text-rose-400' },
                             }[entry.status_type] || { label: entry.status_type, cls: 'bg-slate-100 text-slate-500' };
                             return (
                               <div key={entry.id} className="flex items-start gap-2 px-3 py-2 bg-white dark:bg-slate-950/20 hover:bg-slate-50 dark:hover:bg-slate-900/20 transition-colors">
@@ -2543,6 +2801,30 @@ export default function UseCasesPage() {
                       className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 placeholder-slate-400"
                     />
                   </div>
+                </div>
+
+                {/* Status BA / Dev / Test */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: 'Trạng thái BA',   val: ucStatusBA,   set: setUcStatusBA },
+                    { label: 'Trạng thái DEV',  val: ucStatusDev,  set: setUcStatusDev },
+                    { label: 'Trạng thái TEST', val: ucStatusTest, set: setUcStatusTest },
+                  ].map(({ label, val, set }) => (
+                    <div key={label}>
+                      <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">{label}</label>
+                      <select
+                        value={val}
+                        onChange={(e) => set(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950/80 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer appearance-none"
+                      >
+                        <option value="">— Chưa xác định —</option>
+                        <option value="Chưa bắt đầu">Chưa bắt đầu</option>
+                        <option value="Đang thực hiện">Đang thực hiện</option>
+                        <option value="Hoàn thành">Hoàn thành</option>
+                        <option value="Bị chặn">Bị chặn</option>
+                      </select>
+                    </div>
+                  ))}
                 </div>
 
                 {/* Project & Sprint */}
@@ -2800,6 +3082,21 @@ export default function UseCasesPage() {
                               <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${getBMTBadgeStyle(row.bmt)}`}>
                                 BMT: {row.bmt}
                               </span>
+                              {row.status_ba && (
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded border font-bold ${getStatusBadge(row.status_ba)}`}>
+                                  BA: {row.status_ba}
+                                </span>
+                              )}
+                              {row.status_dev && (
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded border font-bold ${getStatusBadge(row.status_dev)}`}>
+                                  DEV: {row.status_dev}
+                                </span>
+                              )}
+                              {row.status_test && (
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded border font-bold ${getStatusBadge(row.status_test)}`}>
+                                  TEST: {row.status_test}
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="px-4 py-3 text-center select-none">

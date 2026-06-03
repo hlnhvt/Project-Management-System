@@ -5,14 +5,65 @@ import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { Activity, Mail, Lock, AlertCircle, Eye, EyeOff, Loader2, Sun, Moon } from 'lucide-react';
 
+function parseAuthError(err) {
+  const msg  = (err?.message || '').toLowerCase();
+  const code = (err?.code    || '').toLowerCase();
+
+  // Sai email / mật khẩu — Supabase có thể trả về message hoặc code dạng underscore
+  if (
+    msg.includes('invalid login credentials') ||
+    msg.includes('invalid email or password') ||
+    code === 'invalid_credentials' ||
+    code.includes('invalid_credentials')
+  ) {
+    return { message: 'Email hoặc mật khẩu không chính xác. Vui lòng kiểm tra lại.', showHint: true };
+  }
+
+  // Tài khoản chưa xác nhận email
+  if (msg.includes('email not confirmed') || code === 'email_not_confirmed') {
+    return { message: 'Tài khoản chưa được xác minh. Vui lòng liên hệ quản trị viên.', showHint: false };
+  }
+
+  // Tài khoản bị khóa / vô hiệu hóa
+  if (msg.includes('disabled') || msg.includes('blocked') || msg.includes('banned') || code.includes('user_banned')) {
+    return { message: 'Tài khoản đã bị vô hiệu hóa. Liên hệ quản trị viên để được hỗ trợ.', showHint: false };
+  }
+
+  // Quá nhiều lần thử
+  if (
+    msg.includes('too many requests') ||
+    msg.includes('rate limit') ||
+    msg.includes('security purposes') ||
+    msg.includes('after 60') ||
+    code === 'over_request_rate_limit' ||
+    code === 'over_email_send_rate_limit'
+  ) {
+    return { message: 'Quá nhiều lần thử liên tiếp. Vui lòng chờ vài phút rồi thử lại.', showHint: false };
+  }
+
+  // Lỗi mạng / không kết nối được
+  if (msg.includes('network') || msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('load failed')) {
+    return { message: 'Không thể kết nối máy chủ. Kiểm tra lại kết nối mạng của bạn.', showHint: false };
+  }
+
+  // Email không đúng định dạng
+  if (msg.includes('invalid email') || code === 'invalid_email') {
+    return { message: 'Địa chỉ email không đúng định dạng.', showHint: false };
+  }
+
+  // Fallback — không hiển thị message tiếng Anh gốc
+  return { message: 'Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin và thử lại.', showHint: false };
+}
+
 export default function LoginPage() {
   const { login } = useAuth();
   const router = useRouter();
-  
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [showContactHint, setShowContactHint] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [theme, setTheme] = useState('light');
 
@@ -52,12 +103,9 @@ export default function LoginPage() {
       await login(email, password);
       router.push('/');
     } catch (err) {
-      console.error(err);
-      setError(
-        err.message === 'Invalid login credentials' 
-          ? 'Email hoặc mật khẩu không chính xác.' 
-          : err.message || 'Có lỗi xảy ra khi kết nối hệ thống.'
-      );
+      const { message, showHint } = parseAuthError(err);
+      setError(message);
+      setShowContactHint(showHint);
     } finally {
       setSubmitting(false);
     }
@@ -82,14 +130,13 @@ export default function LoginPage() {
         
         {/* Brand Logo & Header */}
         <div className="flex flex-col items-center select-none animate-fade-in">
-          <div className="h-16 w-16 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center shadow-xl shadow-indigo-500/30 dark:shadow-indigo-500/20 mb-4 transition-transform hover:scale-105 duration-300">
-            <Activity className="h-8 w-8 text-white" />
-          </div>
+          <img src="/logo.png" alt="PROJEXA" className="h-16 w-16 rounded-2xl object-cover shadow-xl shadow-indigo-500/30 dark:shadow-indigo-500/20 mb-4 transition-transform hover:scale-105 duration-300" />
+          <img src="/logo-name.png" alt="PROJEXA" className="h-16 object-contain mb-3" />
           <h2 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100 text-center">
             Chào mừng trở lại!
           </h2>
           <p className="mt-2.5 text-sm font-medium text-slate-500 dark:text-slate-400 text-center tracking-wide">
-            Hệ thống Quản lý Tiến độ Công việc AeroTask
+            Hệ thống Quản lý tiến độ công việc Projexa
           </p>
         </div>
 
@@ -99,7 +146,14 @@ export default function LoginPage() {
             {error && (
               <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 flex items-start gap-3 text-rose-600 dark:text-rose-400 text-sm animate-shake">
                 <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
-                <span className="font-medium">{error}</span>
+                <div>
+                  <p className="font-semibold leading-snug">{error}</p>
+                  {showContactHint && (
+                    <p className="text-xs mt-1.5 text-rose-500 dark:text-rose-500 font-normal leading-snug">
+                      Nếu quên mật khẩu, vui lòng liên hệ Quản trị viên để được cấp lại.
+                    </p>
+                  )}
+                </div>
               </div>
             )}
 
@@ -177,9 +231,9 @@ export default function LoginPage() {
 
           {/* Locked Registration Information Badge */}
           <div className="mt-6 pt-6 border-t border-slate-150 dark:border-slate-800/80 text-center select-none">
-            <span className="inline-flex px-3.5 py-1.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-700 dark:text-amber-450 border border-amber-500/20 shadow-sm">
+            {/* <span className="inline-flex px-3.5 py-1.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-700 dark:text-amber-450 border border-amber-500/20 shadow-sm">
               Đăng ký tài khoản bị khóa công khai
-            </span>
+            </span> */}
             <p className="mt-3 text-xs font-medium text-slate-500 dark:text-slate-500 leading-relaxed px-2">
               Vui lòng liên hệ với Quản trị viên (Admin) để nhận thông tin đăng nhập được cấp của bạn.
             </p>

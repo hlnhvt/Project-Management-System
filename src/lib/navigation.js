@@ -31,11 +31,25 @@ export const NAV_ITEMS = [
     href: '/daily-logs',
   },
   {
+    resource: 'team_logs',
+    label: 'Nhật ký thành viên',
+    adminLabel: 'Nhật ký thành viên (Team Logs)',
+    desc: 'Xem và phê duyệt nhật ký của tất cả thành viên theo ngày hoặc khoảng thời gian',
+    href: '/team-logs',
+  },
+  {
     resource: 'projects',
     label: 'Dự án',
     adminLabel: 'Quản lý Dự án & Sprint',
     desc: 'Quản lý danh sách dự án, tạo và theo dõi các sprint trong từng dự án',
     href: '/projects',
+  },
+  {
+    resource: 'statistics',
+    label: 'Thống kê',
+    adminLabel: 'Thống kê & Hiệu suất',
+    desc: 'Biểu đồ tình hình công việc và xếp hạng hiệu suất thành viên',
+    href: '/statistics',
   },
   {
     resource: 'users',

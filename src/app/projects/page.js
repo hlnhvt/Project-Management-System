@@ -3,6 +3,7 @@
 import { useEffect, useState, Fragment } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import DashboardLayout from '@/components/DashboardLayout';
+import DatePickerInput from '@/components/DatePickerInput';
 import { supabase, withTimeout } from '@/lib/supabase';
 import { MOCK_PROJECTS, MOCK_SPRINTS } from '@/lib/mockData';
 import {
@@ -488,11 +489,11 @@ export default function ProjectsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className={labelCls}>Ngày bắt đầu</label>
-                  <input type="date" value={sprintStart} onChange={e => setSprintStart(e.target.value)} className={inputCls} />
+                  <DatePickerInput value={sprintStart} onChange={e => setSprintStart(e.target.value)} className="w-full" />
                 </div>
                 <div>
                   <label className={labelCls}>Ngày kết thúc</label>
-                  <input type="date" value={sprintEnd} onChange={e => setSprintEnd(e.target.value)} className={inputCls} />
+                  <DatePickerInput value={sprintEnd} onChange={e => setSprintEnd(e.target.value)} className="w-full" />
                 </div>
               </div>
               <div className="flex gap-3 pt-1">

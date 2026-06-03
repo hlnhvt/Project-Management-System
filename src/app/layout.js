@@ -13,8 +13,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "AeroTask — Hệ Thống Quản Lý Tiến Độ Công Việc Team",
+  title: "PROJEXA — Hệ Thống Quản Lý Tiến Độ Công Việc Team",
   description: "Giải pháp quản lý tiến độ, phân quyền chi tiết và tối ưu hóa hiệu suất làm việc nhóm vượt trội.",
+  icons: {
+    icon: '/logo.png',
+    shortcut: '/logo.png',
+    apple: '/logo.png',
+  },
+  appleWebApp: {
+    capable: true,
+    title: 'PROJEXA',
+    statusBarStyle: 'default',
+  },
 };
 
 export default function RootLayout({ children }) {

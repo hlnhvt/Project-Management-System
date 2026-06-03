@@ -18,6 +18,7 @@ import {
   Shield,
   GitBranch,
   Eye,
+  EyeOff,
   Edit2,
   Check,
   FolderKanban,
@@ -66,6 +67,16 @@ export default function UsersAdmin() {
   // Trạng thái modal Xem Chi Tiết
   const [selectedUser, setSelectedUser] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+
+  // Trạng thái modal Đặt lại mật khẩu
+  const [resetPwdUser, setResetPwdUser] = useState(null);
+  const [resetPwdValue, setResetPwdValue] = useState('');
+  const [resetPwdConfirm, setResetPwdConfirm] = useState('');
+  const [resetPwdShow, setResetPwdShow] = useState(false);
+  const [resetPwdShowConfirm, setResetPwdShowConfirm] = useState(false);
+  const [resetPwdSubmitting, setResetPwdSubmitting] = useState(false);
+  const [resetPwdError, setResetPwdError] = useState('');
+  const [resetPwdSuccess, setResetPwdSuccess] = useState('');
 
   // Trạng thái modal Chỉnh Sửa
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -351,6 +362,66 @@ export default function UsersAdmin() {
     }
   };
 
+  const handleOpenResetPwdModal = (u) => {
+    setResetPwdUser(u);
+    setResetPwdValue('');
+    setResetPwdConfirm('');
+    setResetPwdShow(false);
+    setResetPwdShowConfirm(false);
+    setResetPwdError('');
+    setResetPwdSuccess('');
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (!resetPwdValue || !resetPwdConfirm) {
+      setResetPwdError('Vui lòng điền đầy đủ mật khẩu mới và xác nhận.');
+      return;
+    }
+    if (resetPwdValue.length < 6) {
+      setResetPwdError('Mật khẩu phải có ít nhất 6 ký tự.');
+      return;
+    }
+    if (resetPwdValue !== resetPwdConfirm) {
+      setResetPwdError('Mật khẩu xác nhận không khớp.');
+      return;
+    }
+
+    setResetPwdError('');
+    setResetPwdSuccess('');
+    setResetPwdSubmitting(true);
+
+    try {
+      if (!isSupabaseConfigured) {
+        setResetPwdSuccess('Đã đặt lại mật khẩu mô phỏng thành công!');
+        setTimeout(() => setResetPwdUser(null), 1200);
+        return;
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const response = await fetch('/api/admin/reset-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify({ userId: resetPwdUser.id, password: resetPwdValue }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Không thể đặt lại mật khẩu.');
+
+      setResetPwdSuccess(result.message || 'Đặt lại mật khẩu thành công!');
+      setTimeout(() => setResetPwdUser(null), 1200);
+    } catch (err) {
+      setResetPwdError(err.message);
+    } finally {
+      setResetPwdSubmitting(false);
+    }
+  };
+
   const handleDeleteUser = async (id, name) => {
     if (!confirm(`Bạn có chắc chắn muốn xóa tài khoản "${name}" khỏi hệ thống không?`)) {
       return;
@@ -591,6 +662,16 @@ export default function UsersAdmin() {
                               title="Chỉnh sửa thông tin"
                             >
                               <Edit2 className="h-4.5 w-4.5" />
+                            </button>
+                          )}
+
+                          {canUpdate && u.id !== currentUser?.id && (
+                            <button
+                              onClick={() => handleOpenResetPwdModal(u)}
+                              className="p-2 rounded-lg text-slate-400 dark:text-slate-550 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/10 transition-all cursor-pointer"
+                              title="Đặt lại mật khẩu"
+                            >
+                              <Key className="h-4.5 w-4.5" />
                             </button>
                           )}
 
@@ -1024,6 +1105,154 @@ export default function UsersAdmin() {
                       </>
                     ) : (
                       'Lưu thay đổi'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Reset Password */}
+        {resetPwdUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-500/15 backdrop-blur-md" onClick={() => setResetPwdUser(null)} />
+            <div className="glass-panel w-full max-w-sm rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 relative z-10 animate-scale-up bg-white/95 dark:bg-slate-900/95">
+              <button
+                onClick={() => setResetPwdUser(null)}
+                className="absolute top-4 right-4 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              {/* Header */}
+              <div className="flex items-center gap-3 mb-5">
+                <div className="h-9 w-9 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                  <Key className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">Đặt lại mật khẩu</h3>
+                  <p className="text-xs text-slate-400 dark:text-slate-500">Thay đổi mật khẩu đăng nhập của thành viên</p>
+                </div>
+              </div>
+
+              {/* Target user card */}
+              <div className="flex items-center gap-3 p-3 mb-5 rounded-xl bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800">
+                <div className="h-9 w-9 rounded-full bg-gradient-to-br from-indigo-500/10 to-violet-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-sm uppercase shrink-0">
+                  {resetPwdUser.full_name.charAt(0)}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{resetPwdUser.full_name}</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 truncate">{resetPwdUser.email}</p>
+                </div>
+                <span className={`ml-auto text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shrink-0 border ${getRoleBadgeStyle(resetPwdUser.role?.name)}`}>
+                  {resetPwdUser.role?.name || 'Developer'}
+                </span>
+              </div>
+
+              <form onSubmit={handleResetPassword} className="space-y-4" autoComplete="off">
+                {resetPwdError && (
+                  <div className="bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs p-3.5 rounded-xl flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4 shrink-0" />
+                    <span>{resetPwdError}</span>
+                  </div>
+                )}
+                {resetPwdSuccess && (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs p-3.5 rounded-xl flex items-center gap-2">
+                    <UserCheck className="h-4 w-4 shrink-0 animate-bounce" />
+                    <span>{resetPwdSuccess}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                    Mật khẩu mới <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <Key className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-600 pointer-events-none" />
+                    <input
+                      type={resetPwdShow ? 'text' : 'password'}
+                      required
+                      value={resetPwdValue}
+                      onChange={(e) => setResetPwdValue(e.target.value)}
+                      placeholder="Tối thiểu 6 ký tự..."
+                      minLength={6}
+                      className={`w-full pl-10 pr-10 py-2.5 bg-slate-50 dark:bg-slate-950/80 border rounded-xl text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white dark:focus:bg-slate-955/80 placeholder-slate-400 dark:placeholder-slate-550 transition-colors ${
+                        resetPwdError && !resetPwdValue ? 'border-rose-400 dark:border-rose-600' : 'border-slate-200 dark:border-slate-800'
+                      }`}
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setResetPwdShow(p => !p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors cursor-pointer"
+                    >
+                      {resetPwdShow ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {resetPwdValue.length > 0 && resetPwdValue.length < 6 && (
+                    <p className="text-[10px] text-rose-500 dark:text-rose-400 mt-1">Còn thiếu {6 - resetPwdValue.length} ký tự</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
+                    Xác nhận mật khẩu <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <Key className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-600 pointer-events-none" />
+                    <input
+                      type={resetPwdShowConfirm ? 'text' : 'password'}
+                      required
+                      value={resetPwdConfirm}
+                      onChange={(e) => setResetPwdConfirm(e.target.value)}
+                      placeholder="Nhập lại mật khẩu mới..."
+                      className={`w-full pl-10 pr-10 py-2.5 bg-slate-50 dark:bg-slate-950/80 border rounded-xl text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:bg-white dark:focus:bg-slate-955/80 placeholder-slate-400 dark:placeholder-slate-550 transition-colors ${
+                        resetPwdConfirm && resetPwdValue !== resetPwdConfirm ? 'border-rose-400 dark:border-rose-600' : 'border-slate-200 dark:border-slate-800'
+                      }`}
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setResetPwdShowConfirm(p => !p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors cursor-pointer"
+                    >
+                      {resetPwdShowConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {resetPwdConfirm && resetPwdValue !== resetPwdConfirm && (
+                    <p className="text-[10px] text-rose-500 dark:text-rose-400 mt-1">Mật khẩu xác nhận chưa khớp</p>
+                  )}
+                  {resetPwdConfirm && resetPwdValue === resetPwdConfirm && resetPwdValue.length >= 6 && (
+                    <p className="text-[10px] text-emerald-500 dark:text-emerald-400 mt-1 flex items-center gap-1">
+                      <Check className="h-3 w-3" /> Mật khẩu khớp
+                    </p>
+                  )}
+                </div>
+
+                <div className="pt-2 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setResetPwdUser(null)}
+                    className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-755 transition-colors cursor-pointer"
+                  >
+                    Hủy bỏ
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={resetPwdSubmitting || resetPwdValue !== resetPwdConfirm || resetPwdValue.length < 6}
+                    className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/10 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    {resetPwdSubmitting ? (
+                      <>
+                        <Loader2 className="animate-spin h-3.5 w-3.5" />
+                        Đang xử lý...
+                      </>
+                    ) : (
+                      <>
+                        <Key className="h-3.5 w-3.5" />
+                        Xác nhận đặt lại
+                      </>
                     )}
                   </button>
                 </div>

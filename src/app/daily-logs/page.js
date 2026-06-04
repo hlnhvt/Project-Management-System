@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import DashboardLayout from '@/components/DashboardLayout';
 import { supabase, withTimeout } from '@/lib/supabase';
+import { sendNotification } from '@/lib/sendNotification';
 import { MOCK_PROJECTS, MOCK_SPRINTS } from '@/lib/mockData';
 import {
   ChevronLeft,
@@ -32,6 +33,8 @@ import {
   Link2,
   RefreshCw,
   ExternalLink,
+  MessageSquare,
+  Send,
 } from 'lucide-react';
 
 const MOCK_LOGS = [
@@ -99,6 +102,11 @@ const MOCK_UC_LIST = [
   { id: 'uc3', code: 'UC-03', name: 'Sơ đồ cây thành viên', description: 'Xem trực quan sơ đồ tổ chức nhân sự dưới dạng cây đệ quy cha con.', actors: 'Admin, Manager', difficulty: 'Trung bình', ba_email: 'ba@demo.com', dev_email: '' },
 ];
 
+const MOCK_COMMENTS = [
+  { id: 'cmt1', log_id: 'log1', user_id: '2', author_name: 'Trần Thị Manager', content: 'Tiến độ tốt! Tiếp tục maintain nhịp độ này nhé. Review Sprint 2 vào sáng mai.', created_at: '2026-05-28T18:30:00Z' },
+  { id: 'cmt2', log_id: 'log1', user_id: 'preview', author_name: 'Tôi', content: 'Vâng ạ, em đã note lại các điểm cần cải thiện rồi ạ.', created_at: '2026-05-28T19:05:00Z' },
+];
+
 const WEEK_DAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 const MONTH_NAMES = ['Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6',
   'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'];
@@ -117,10 +125,56 @@ const formatDisplayDate = (dateStr) => {
   return `${weekdays[date.getDay()]}, ngày ${d} tháng ${m} năm ${y}`;
 };
 
+function formatCommentTime(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  const diff = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (diff < 60) return 'vừa xong';
+  if (diff < 3600) return `${Math.floor(diff / 60)} phút trước`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} giờ trước`;
+  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)} ngày trước`;
+  return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
 function normalizeUrl(url) {
   if (!url) return url;
   if (/^https?:\/\//i.test(url)) return url;
   return 'https://' + url;
+}
+
+function extractLinksFromHtml(html) {
+  if (!html) return [];
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const seen = new Set();
+    const result = [];
+    doc.querySelectorAll('a[href]').forEach(a => {
+      const url = a.getAttribute('href');
+      if (!url || !/^https?:\/\//i.test(url)) return;
+      if (seen.has(url)) return;
+      seen.add(url);
+      const label = a.textContent?.trim() || url;
+      result.push({ id: 'lk-' + Math.random().toString(36).substr(2, 9), url, label });
+    });
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    const urlRegex = /https?:\/\/[^\s<>"']+/g;
+    let node;
+    while ((node = walker.nextNode())) {
+      if (node.parentElement?.tagName === 'A') continue;
+      const matches = node.textContent.match(urlRegex) || [];
+      for (const rawUrl of matches) {
+        const url = rawUrl.replace(/[.,;!?)]+$/, '');
+        if (!seen.has(url)) {
+          seen.add(url);
+          result.push({ id: 'lk-' + Math.random().toString(36).substr(2, 9), url, label: url });
+        }
+      }
+    }
+    return result;
+  } catch {
+    return [];
+  }
 }
 
 export default function DailyLogsPage() {
@@ -141,8 +195,14 @@ export default function DailyLogsPage() {
   });
   const [selectedDate, setSelectedDate] = useState(todayStr);
 
-  // Team member selector
-  const [viewingUserId, setViewingUserId] = useState('self');
+  // Team member selector — đọc từ localStorage ngay khi khởi tạo để tránh race condition
+  const [viewingUserId, setViewingUserId] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const id = localStorage.getItem('aerotask_viewing_user_id');
+      if (id) { localStorage.removeItem('aerotask_viewing_user_id'); return id; }
+    }
+    return 'self';
+  });
   const [teamMembers, setTeamMembers] = useState([]);
   const [teamLoading, setTeamLoading] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -158,6 +218,12 @@ export default function DailyLogsPage() {
   const [currentLog, setCurrentLog] = useState(null);
   const [logLoading, setLogLoading] = useState(false);
 
+  // Comments state
+  const [logComments, setLogComments] = useState([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [newComment, setNewComment] = useState('');
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+
   // Title & related UCs
   const [logTitle, setLogTitle] = useState('');
   const [relatedUCs, setRelatedUCs] = useState([]);
@@ -171,6 +237,7 @@ export default function DailyLogsPage() {
   const saveTimerRef = useRef(null);
   const currentLogRef = useRef(null);
   const selectedDateRef = useRef(todayStr);
+  const fetchDayLogsGenRef = useRef(0);
   const [saveStatus, setSaveStatus] = useState('saved');
   const [savedAt, setSavedAt] = useState(null);
 
@@ -415,6 +482,7 @@ export default function DailyLogsPage() {
 
   // Fetch ALL logs for the selected date — replaces the old single-log fetch
   const fetchDayLogs = async () => {
+    const gen = ++fetchDayLogsGenRef.current;
     const targetUserId = getTargetUserId();
     setLogLoading(true);
 
@@ -422,6 +490,7 @@ export default function DailyLogsPage() {
       const found = mockLogs
         .filter(l => l.user_id === targetUserId && l.log_date === selectedDateRef.current)
         .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      if (gen !== fetchDayLogsGenRef.current) return;
       setDayLogs(found);
       setCurrentLog(found[0] || null);
       setLogLoading(false);
@@ -436,16 +505,95 @@ export default function DailyLogsPage() {
           .eq('log_date', selectedDateRef.current)
           .order('created_at', { ascending: true })
       );
+      if (gen !== fetchDayLogsGenRef.current) return;
       const logs = data
         ? data.map(d => ({ ...d, approved_by_name: d.profiles?.full_name || null }))
         : [];
       setDayLogs(logs);
       setCurrentLog(logs[0] || null);
     } catch {
+      if (gen !== fetchDayLogsGenRef.current) return;
       setDayLogs([]);
       setCurrentLog(null);
     } finally {
-      setLogLoading(false);
+      if (gen === fetchDayLogsGenRef.current) setLogLoading(false);
+    }
+  };
+
+  // ─── Comments ─────────────────────────────────────────────────────────────────
+
+  const fetchLogComments = async (logId) => {
+    if (!logId) { setLogComments([]); return; }
+    setCommentsLoading(true);
+    if (!isSupabaseConfigured) {
+      setLogComments(MOCK_COMMENTS.filter(c => c.log_id === logId));
+      setCommentsLoading(false);
+      return;
+    }
+    try {
+      const { data } = await withTimeout(
+        supabase.from('log_comments')
+          .select('*, profiles!user_id(full_name)')
+          .eq('log_id', logId)
+          .order('created_at', { ascending: true })
+      );
+      setLogComments((data || []).map(c => ({ ...c, author_name: c.profiles?.full_name || 'Người dùng' })));
+    } catch {
+      setLogComments([]);
+    } finally {
+      setCommentsLoading(false);
+    }
+  };
+
+  const submitComment = async () => {
+    const text = newComment.trim();
+    if (!text || !currentLog?.id || commentSubmitting) return;
+    setCommentSubmitting(true);
+    if (!isSupabaseConfigured) {
+      const mock = {
+        id: 'cmt-' + Math.random().toString(36).substr(2, 9),
+        log_id: currentLog.id, user_id: 'preview',
+        content: text, author_name: profile?.full_name || 'Tôi',
+        created_at: new Date().toISOString(),
+      };
+      setLogComments(prev => [...prev, mock]);
+      setNewComment('');
+      setCommentSubmitting(false);
+      return;
+    }
+    try {
+      const { data, error } = await withTimeout(
+        supabase.from('log_comments')
+          .insert({ log_id: currentLog.id, user_id: user.id, content: text })
+          .select('*, profiles!user_id(full_name)')
+          .single()
+      );
+      if (error) throw error;
+      if (data) {
+        const comment = { ...data, author_name: data.profiles?.full_name || profile?.full_name || 'Tôi' };
+        setLogComments(prev => prev.some(c => c.id === comment.id) ? prev : [...prev, comment]);
+      }
+      setNewComment('');
+    } catch (err) {
+      alert('Lỗi: ' + err.message);
+    } finally {
+      setCommentSubmitting(false);
+    }
+  };
+
+  const deleteComment = async (commentId) => {
+    if (!isSupabaseConfigured) {
+      setLogComments(prev => prev.filter(c => c.id !== commentId));
+      return;
+    }
+    try {
+      const { error } = await withTimeout(
+        supabase.from('log_comments').delete().eq('id', commentId)
+      );
+      if (error) throw error;
+      setLogComments(prev => prev.filter(c => c.id !== commentId));
+    } catch (err) {
+      alert('Lỗi khi xóa: ' + err.message);
     }
   };
 
@@ -519,6 +667,46 @@ export default function DailyLogsPage() {
   useEffect(() => { fetchDayLogs(); }, [selectedDate, viewingUserId, isSupabaseConfigured, mockLogs]);
   useEffect(() => { fetchTeamLogsForDate(); }, [selectedDate, teamMembers, isSupabaseConfigured]);
   useEffect(() => { setUcListPage(1); }, [ucListSearch, ucListFilters, ucListFilterProject]);
+
+  // Comments: fetch + realtime subscription khi currentLog thay đổi
+  useEffect(() => {
+    if (!currentLog?.id) { setLogComments([]); return; }
+    fetchLogComments(currentLog.id);
+    if (!isSupabaseConfigured) return;
+
+    const channel = supabase
+      .channel(`log-comments-${currentLog.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'log_comments',
+        filter: `log_id=eq.${currentLog.id}`,
+      }, async (payload) => {
+        // Bỏ qua nếu comment này do chính user vừa tạo (đã thêm optimistically)
+        if (payload.new.user_id === user?.id) return;
+        try {
+          const { data } = await supabase.from('log_comments')
+            .select('*, profiles!user_id(full_name)')
+            .eq('id', payload.new.id)
+            .single();
+          if (data) {
+            const c = { ...data, author_name: data.profiles?.full_name || 'Người dùng' };
+            setLogComments(prev => prev.some(x => x.id === c.id) ? prev : [...prev, c]);
+          }
+        } catch {}
+      })
+      .on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'log_comments',
+        filter: `log_id=eq.${currentLog.id}`,
+      }, (payload) => {
+        setLogComments(prev => prev.filter(c => c.id !== payload.old.id));
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [currentLog?.id, isSupabaseConfigured]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   // Click outside — dropdown
@@ -598,7 +786,11 @@ export default function DailyLogsPage() {
     editorRef.current.innerHTML = currentLog.content || '';
     setLogTitle(currentLog.title || '');
     setRelatedUCs(currentLog.related_ucs || []);
-    setRelatedLinks(currentLog.related_links || []);
+    const savedLinks = currentLog.related_links || [];
+    const detected = extractLinksFromHtml(currentLog.content || '');
+    const savedUrls = new Set(savedLinks.map(l => l.url));
+    const newLinks = detected.filter(l => !savedUrls.has(l.url));
+    setRelatedLinks(newLinks.length > 0 ? [...savedLinks, ...newLinks] : savedLinks);
     setLogProjectId(currentLog.project_id || '');
     setLogSprintId(currentLog.sprint_id || '');
     setLogTaskId(currentLog.task_id || '');
@@ -778,6 +970,18 @@ export default function DailyLogsPage() {
       setCurrentLog(updated);
       setDayLogs(prev => prev.map(l => l.id === log.id ? updated : l));
       setCalendarLogs(prev => prev.map(l => l.id === log.id ? { ...l, is_approved: true } : l));
+      // Gửi thông báo cho chủ nhật ký
+      if (log.user_id) {
+        const logDateStr = log.log_date
+          ? new Date(log.log_date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+          : '';
+        sendNotification({
+          title: 'Nhật ký của bạn đã được phê duyệt',
+          body: `<p>Nhật ký${log.title ? ` <strong>"${log.title}"</strong>` : ''}${logDateStr ? ` ngày <strong>${logDateStr}</strong>` : ''} của bạn đã được phê duyệt bởi <strong>${profile?.full_name || 'Quản lý'}</strong>.</p>`,
+          recipientId: log.user_id,
+          senderId: user?.id,
+        });
+      }
     } catch (err) {
       setError('Lỗi phê duyệt: ' + err.message);
     } finally {
@@ -1427,7 +1631,7 @@ export default function DailyLogsPage() {
           </div>
 
           {/* ── Note editor panel ── */}
-          <div className="glass-panel rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col">
+          <div className="glass-panel rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col min-w-0 overflow-hidden">
 
             {/* Panel header */}
             <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
@@ -1526,6 +1730,32 @@ export default function DailyLogsPage() {
                       Thêm nhật ký
                     </button>
                   )
+                )}
+              </div>
+            )}
+
+            {/* Approve / revoke bar — above title */}
+            {(canApproveLog || canRevokeLog) && (
+              <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-950/20">
+                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                  {canApproveLog
+                    ? isViewingOwnLogs
+                      ? <>Phê duyệt nhật ký <strong>"{currentLog?.title || 'chưa đặt tiêu đề'}"</strong> của bạn.</>
+                      : <>Xem xét nhật ký <strong>"{currentLog?.title || 'chưa đặt tiêu đề'}"</strong> của <strong>{getViewingUserName()}</strong> và phê duyệt nếu đạt yêu cầu.</>
+                    : isViewingOwnLogs
+                      ? <>Nhật ký này đã được phê duyệt. Hủy phê duyệt để chỉnh sửa lại.</>
+                      : <>Nhật ký <strong>"{currentLog?.title || 'chưa đặt tiêu đề'}"</strong> của <strong>{getViewingUserName()}</strong> đã phê duyệt.</>
+                  }
+                </p>
+                {canApproveLog && (
+                  <button onClick={handleApprove} disabled={approving} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm shadow-emerald-600/20 disabled:opacity-50 transition-all cursor-pointer shrink-0">
+                    {approving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Đang xử lý...</> : <><Check className="h-3.5 w-3.5" /> Phê duyệt nhật ký</>}
+                  </button>
+                )}
+                {canRevokeLog && (
+                  <button onClick={handleRevoke} disabled={approving} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-sm shadow-rose-600/20 disabled:opacity-50 transition-all cursor-pointer shrink-0">
+                    {approving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Đang xử lý...</> : 'Hủy phê duyệt'}
+                  </button>
                 )}
               </div>
             )}
@@ -1926,31 +2156,92 @@ export default function DailyLogsPage() {
               </div>
             )}
 
-            {/* Footer: approve / revoke */}
-            {(canApproveLog || canRevokeLog) && (
-              <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4 bg-slate-50/50 dark:bg-slate-950/20">
-                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                  {canApproveLog
-                    ? isViewingOwnLogs
-                      ? <>Phê duyệt nhật ký <strong>"{currentLog?.title || 'chưa đặt tiêu đề'}"</strong> của bạn.</>
-                      : <>Xem xét nhật ký <strong>"{currentLog?.title || 'chưa đặt tiêu đề'}"</strong> của <strong>{getViewingUserName()}</strong> và phê duyệt nếu đạt yêu cầu.</>
-                    : isViewingOwnLogs
-                      ? <>Nhật ký này đã được phê duyệt. Hủy phê duyệt để chỉnh sửa lại.</>
-                      : <>Nhật ký <strong>"{currentLog?.title || 'chưa đặt tiêu đề'}"</strong> của <strong>{getViewingUserName()}</strong> đã phê duyệt.</>
-                  }
-                </p>
-                {canApproveLog && (
-                  <button onClick={handleApprove} disabled={approving} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm shadow-emerald-600/20 disabled:opacity-50 transition-all cursor-pointer shrink-0">
-                    {approving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Đang xử lý...</> : <><Check className="h-3.5 w-3.5" /> Phê duyệt nhật ký</>}
-                  </button>
-                )}
-                {canRevokeLog && (
-                  <button onClick={handleRevoke} disabled={approving} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-sm shadow-rose-600/20 disabled:opacity-50 transition-all cursor-pointer shrink-0">
-                    {approving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Đang xử lý...</> : 'Hủy phê duyệt'}
-                  </button>
+            {/* Comments section */}
+            {currentLog && (
+              <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <MessageSquare className="h-3 w-3" />
+                  Bình luận ({logComments.length})
+                </span>
+
+                {commentsLoading ? (
+                  <div className="flex items-center gap-2 text-slate-400 dark:text-slate-600 py-2">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span className="text-[11px]">Đang tải bình luận...</span>
+                  </div>
+                ) : (
+                  <>
+                    {/* Danh sách bình luận */}
+                    {logComments.length > 0 && (
+                      <div className="space-y-2.5">
+                        {logComments.map(comment => (
+                          <div key={comment.id} className="flex gap-2.5 group">
+                            <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5 select-none">
+                              {comment.author_name?.charAt(0).toUpperCase() || '?'}
+                            </div>
+                            <div className="flex-1 min-w-0 bg-slate-50 dark:bg-slate-900/60 rounded-xl px-3 py-2">
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{comment.author_name}</span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className="text-[10px] text-slate-400 dark:text-slate-600">{formatCommentTime(comment.created_at)}</span>
+                                  {comment.user_id === user?.id && (
+                                    <button
+                                      onClick={() => deleteComment(comment.id)}
+                                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-slate-300 dark:text-slate-700 hover:text-rose-500 dark:hover:text-rose-400 transition-all cursor-pointer"
+                                      title="Xóa bình luận"
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              <p className="text-[12px] text-slate-600 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">{comment.content}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Ô nhập bình luận mới */}
+                    <div className="flex gap-2.5 pt-1">
+                      <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 mt-0.5 select-none">
+                        {profile?.full_name?.charAt(0).toUpperCase() || '?'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <textarea
+                          value={newComment}
+                          onChange={(e) => setNewComment(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                              e.preventDefault();
+                              submitComment();
+                            }
+                          }}
+                          placeholder="Thêm bình luận... (Ctrl+Enter để gửi)"
+                          rows={2}
+                          className="w-full text-[12px] px-3 py-2 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 focus:border-indigo-400 dark:focus:border-indigo-600 resize-none transition-colors"
+                        />
+                        {newComment.trim() && (
+                          <div className="flex justify-end mt-1.5">
+                            <button
+                              onClick={submitComment}
+                              disabled={commentSubmitting}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold transition-all shadow-sm shadow-indigo-600/20 disabled:opacity-50 cursor-pointer"
+                            >
+                              {commentSubmitting
+                                ? <><Loader2 className="h-3 w-3 animate-spin" /> Đang gửi...</>
+                                : <><Send className="h-3 w-3" /> Gửi</>
+                              }
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
             )}
+
           </div>
 
         </div>

@@ -1317,7 +1317,7 @@ export default function UseCasesPage() {
     { key: 'doc_reviewed_at', label: 'Review tài liệu' },
   ];
 
-  const tableMinWidth = 40 + 96 + COLS
+  const tableMinWidth = 40 + 130 + COLS
     .filter(c => visibleCols[c.key])
     .reduce((sum, c) => sum + (colWidths[c.key] || 100), 0);
 
@@ -1653,7 +1653,12 @@ export default function UseCasesPage() {
                         </div>
                       </th>
                     ))}
-                    <th className="px-4 py-3 text-right" style={{ width: 96, minWidth: 96 }}>Thao tác</th>
+                    <th
+                      className="px-4 py-3 text-right sticky right-0 z-20 bg-slate-50 dark:bg-slate-900/60 border-l border-slate-200 dark:border-slate-800 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.06)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.25)]"
+                      style={{ width: 130, minWidth: 130 }}
+                    >
+                      Thao tác
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60">
@@ -1776,7 +1781,10 @@ export default function UseCasesPage() {
                               </td>
                             );
                           })}
-                          <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                          <td
+                            className="px-4 py-3 text-right sticky right-0 z-10 bg-white dark:bg-gray-950 group-hover:bg-slate-50 dark:group-hover:bg-slate-900/80 border-l border-slate-200/60 dark:border-slate-800/60 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.04)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.2)]"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                               <button
                                 onClick={() => handleOpenViewModal(uc)}
@@ -1811,7 +1819,7 @@ export default function UseCasesPage() {
                         </tr>
                         {isExpanded && (
                           <tr className="bg-slate-50/30 dark:bg-slate-950/10">
-                            <td colSpan={2 + COLS.filter(c => visibleCols[c.key]).length} className="px-8 py-3.5 border-t border-b border-slate-200/50 dark:border-slate-800/50">
+                            <td colSpan={1 + COLS.filter(c => visibleCols[c.key]).length} className="px-8 py-3.5 border-t border-b border-slate-200/50 dark:border-slate-800/50">
                               <div className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-inner bg-white dark:bg-slate-900/30 w-full p-4 space-y-4">
                                 
                                 {/* Thông tin chi tiết Use Case */}
@@ -1860,6 +1868,8 @@ export default function UseCasesPage() {
                               </div>
                             </div>
                           </td>
+                            {/* Ô sticky rỗng tương ứng cột Thao tác */}
+                            <td className="sticky right-0 z-10 bg-slate-50/80 dark:bg-slate-950/60 border-l border-slate-200/60 dark:border-slate-800/60 border-t border-b border-slate-200/50 dark:border-slate-800/50 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.04)] dark:shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.2)]" />
                         </tr>
                         )}
                       </Fragment>

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, BellOff, X, CheckCheck } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase, withTimeout } from '@/lib/supabase';
+import notifStore from '@/lib/notifStore';
 import Link from 'next/link';
 
 const IS_CONFIGURED = !!(
@@ -28,7 +29,6 @@ function timeAgo(iso) {
   return new Date(iso).toLocaleDateString('vi-VN');
 }
 
-// Strip HTML tags for plain-text preview in the dropdown list
 function stripHtml(html) {
   if (!html) return '';
   return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -36,11 +36,15 @@ function stripHtml(html) {
 
 export default function NotificationBell() {
   const { user }   = useAuth();
-  const [isOpen, setIsOpen]       = useState(false);
-  const [items, setItems]         = useState([]);
-  const [loading, setLoading]     = useState(false);
-  const [detailItem, setDetailItem] = useState(null);
-  const dropdownRef = useRef(null);
+  const [isOpen, setIsOpen]           = useState(false);
+  const [items, setItems]             = useState([]);
+  const [loading, setLoading]         = useState(false);
+  const [detailItem, setDetailItem]   = useState(null);
+  const [toast, setToast]             = useState(null);
+  // toastKey forces progress-bar animation to restart on each new toast
+  const [toastKey, setToastKey]       = useState(0);
+  const dropdownRef   = useRef(null);
+  const toastTimerRef = useRef(null);
 
   const unreadCount = items.filter(r => !r.is_read).length;
 
@@ -62,7 +66,24 @@ export default function NotificationBell() {
     setLoading(false);
   }, [user]);
 
+  const showToast = useCallback((rec) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast(rec);
+    setToastKey(k => k + 1);
+    toastTimerRef.current = setTimeout(() => setToast(null), 5000);
+  }, []);
+
+  const dismissToast = useCallback(() => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast(null);
+  }, []);
+
   useEffect(() => { fetchItems(); }, [fetchItems]);
+
+  // Sync unread count vào store để Sidebar và các component khác dùng chung
+  useEffect(() => {
+    notifStore.set(items.filter(r => !r.is_read).length);
+  }, [items]);
 
   useEffect(() => {
     if (!user || !IS_CONFIGURED) return;
@@ -74,12 +95,28 @@ export default function NotificationBell() {
         schema: 'public',
         table: 'notification_recipients',
         filter: `recipient_id=eq.${user.id}`,
-      }, () => fetchItems())
+      }, async (payload) => {
+        fetchItems();
+        // Fetch chi tiết thông báo mới để hiển thị toast
+        try {
+          const { data } = await withTimeout(
+            supabase
+              .from('notification_recipients')
+              .select('id, is_read, notifications(id, title, body, created_at)')
+              .eq('id', payload.new.id)
+              .single()
+          );
+          if (data?.notifications) showToast(data);
+        } catch {}
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [user, fetchItems]);
+  }, [user, fetchItems, showToast]);
 
-  // Close dropdown on outside click (but not when detail modal is open)
+  // Cleanup timer khi unmount
+  useEffect(() => () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); }, []);
+
+  // Đóng dropdown khi click ngoài (trừ khi modal chi tiết đang mở)
   useEffect(() => {
     if (!isOpen || detailItem) return;
     const handler = (e) => {
@@ -114,6 +151,12 @@ export default function NotificationBell() {
   const openDetail = (rec) => {
     setDetailItem(rec);
     if (!rec.is_read) markOneRead(rec.id);
+  };
+
+  const openToastDetail = () => {
+    if (!toast) return;
+    dismissToast();
+    openDetail(toast);
   };
 
   return (
@@ -221,6 +264,44 @@ export default function NotificationBell() {
           </div>
         )}
       </div>
+
+      {/* ── Toast thông báo mới ────────────────────────────────────────────── */}
+      {toast && (
+        <div key={toastKey} className="fixed bottom-24 right-6 z-[150] w-80 animate-toast-in">
+          <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded-2xl shadow-2xl shadow-slate-300/40 dark:shadow-black/60 overflow-hidden">
+            {/* Progress bar tự thu hẹp trong 5s */}
+            <div className="h-1 bg-indigo-500 animate-shrink-x" />
+            <div
+              className="flex gap-3 p-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-gray-800/40 transition-colors"
+              onClick={openToastDetail}
+            >
+              <div className="shrink-0 mt-0.5 h-9 w-9 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
+                <Bell className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-wider mb-0.5">
+                  Thông báo mới
+                </p>
+                <p className="text-xs font-semibold text-slate-900 dark:text-white leading-snug truncate">
+                  {toast.notifications?.title}
+                </p>
+                {toast.notifications?.body && (
+                  <p className="text-[11px] text-slate-400 dark:text-gray-500 mt-0.5 line-clamp-2 leading-snug">
+                    {stripHtml(toast.notifications.body)}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); dismissToast(); }}
+                className="shrink-0 self-start p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Notification detail modal ──────────────────────────────────────── */}
       {detailItem && (

@@ -45,17 +45,22 @@ function stripHtml(html = '') {
   return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function localDateStr(d) {
+  // Dùng component giờ địa phương thay vì toISOString() (UTC) để tránh lệch ngày
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
 function getDateRange(preset) {
-  const to   = new Date(); to.setHours(0,0,0,0);
+  const to   = new Date();
   const from = new Date(to);
-  if (preset === 'today')  { /* no change */ }
-  else if (preset === '7d')   from.setDate(from.getDate() - 6);
+  if (preset === '7d')    from.setDate(from.getDate() - 6);
   else if (preset === '30d')  from.setDate(from.getDate() - 29);
-  else if (preset === 'month'){ from.setDate(1); }
-  return {
-    from: from.toISOString().split('T')[0],
-    to:   to.toISOString().split('T')[0],
-  };
+  else if (preset === 'month') from.setDate(1);
+  return { from: localDateStr(from), to: localDateStr(to) };
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
@@ -120,6 +125,9 @@ export default function TeamLogsPage() {
       const memberList = mData || [];
       setMembers(memberList);
 
+      console.log('[TeamLogs] role:', role?.name, '| isManagerOrAdmin:', isManagerOrAdmin);
+      console.log('[TeamLogs] profiles fetched:', memberList.length, memberList.map(m => m.id));
+
       // Projects map
       const { data: pData } = await withTimeout(
         supabase.from('projects').select('id, name, code')
@@ -127,13 +135,18 @@ export default function TeamLogsPage() {
       const projMap = {};
       (pData || []).forEach(p => { projMap[p.id] = p; });
 
-      // Logs
+      // Profile map để tra cứu tên — dùng thay cho FK join trong query
+      const profileMap = {};
+      memberList.forEach(m => { profileMap[m.id] = m.full_name; });
+
+      // Logs — select phẳng, không dùng FK join để tránh lỗi schema cache
       const memberIds = isManagerOrAdmin ? memberList.map(m => m.id) : [user.id];
+      console.log('[TeamLogs] memberIds:', memberIds, '| date range:', from, '→', to);
       if (memberIds.length === 0) { setAllLogs([]); return; }
 
       const { data: lData, error: lErr } = await withTimeout(
         supabase.from('daily_logs')
-          .select('id, user_id, log_date, title, content, is_approved, approved_at, project_id, created_at, author:user_id(full_name), approver:approved_by(full_name)')
+          .select('id, user_id, log_date, title, content, is_approved, approved_at, approved_by, project_id, created_at')
           .in('user_id', memberIds)
           .gte('log_date', from)
           .lte('log_date', to)
@@ -141,16 +154,18 @@ export default function TeamLogsPage() {
           .order('created_at', { ascending: false })
           .limit(300)
       );
+      console.log('[TeamLogs] logs fetched:', lData?.length, '| error:', lErr?.message);
       if (lErr) throw lErr;
 
       setAllLogs((lData || []).map(l => ({
         ...l,
-        author_name:   l.author?.full_name   || '—',
-        approver_name: l.approver?.full_name || null,
+        author_name:   profileMap[l.user_id]    || '—',
+        approver_name: profileMap[l.approved_by] || null,
         project_name:  projMap[l.project_id]?.name || null,
         project_code:  projMap[l.project_id]?.code || null,
       })));
     } catch (err) {
+      console.error('[TeamLogs] fetchData error:', err);
       setError(err.message || 'Không thể tải dữ liệu.');
     } finally {
       setLoading(false);

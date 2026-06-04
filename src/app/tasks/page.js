@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import DashboardLayout from '@/components/DashboardLayout';
 import DatePickerInput from '@/components/DatePickerInput';
 import { supabase, withTimeout } from '@/lib/supabase';
+import { sendNotification } from '@/lib/sendNotification';
 import { MOCK_PROJECTS, MOCK_SPRINTS } from '@/lib/mockData';
 import {
   Plus,
@@ -66,6 +67,10 @@ const COLUMNS = [
   { id: 'done', name: 'Đã xong', color: 'border-emerald-150 dark:border-emerald-900 bg-emerald-50/20 dark:bg-emerald-950/5 text-emerald-600 dark:text-emerald-400' },
 ];
 
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 export default function TasksPage() {
   const router = useRouter();
   const { user, profile, hasPermission, role } = useAuth();
@@ -99,6 +104,13 @@ export default function TasksPage() {
   const [taskReportedTo, setTaskReportedTo] = useState('');
 
   const [modalSubmitting, setModalSubmitting] = useState(false);
+
+  // Bộ lọc khoảng thời gian hạn hoàn thành
+  const [filterFromDate, setFilterFromDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
+  });
+  const [filterToDate, setFilterToDate] = useState(() => localDateStr(new Date()));
 
   // Chế độ xem: 'kanban' hoặc 'table'
   const [viewMode, setViewMode] = useState('kanban');
@@ -617,6 +629,15 @@ export default function TasksPage() {
       await withTimeout(supabase.from('task_history').insert({
         task_id: task.id, changed_by_id: user?.id || null, action: 'update', changes: changeLog,
       })).catch(() => {});
+      // Gửi thông báo khi công việc được duyệt hoàn thành
+      if (newStatus === 'done' && task.assigned_to) {
+        sendNotification({
+          title: 'Công việc của bạn đã được phê duyệt',
+          body: `<p>Công việc <strong>"${task.title}"</strong>${task.code ? ` (<strong>${task.code}</strong>)` : ''} đã được duyệt hoàn thành bởi <strong>${profile?.full_name || 'Quản lý'}</strong>.</p>`,
+          recipientId: task.assigned_to,
+          senderId: user?.id,
+        });
+      }
       await fetchTasksAndMembers();
     } catch (err) {
       alert('Không thể cập nhật trạng thái: ' + err.message);
@@ -626,9 +647,28 @@ export default function TasksPage() {
   // Admin thấy tất cả; các role khác chỉ thấy task được giao hoặc báo cáo cho mình
   const isAdmin = role?.name === 'Admin';
   const isManagerOrAdmin = isAdmin || role?.name === 'Manager';
-  const visibleTasks = (isSupabaseConfigured && user && !isAdmin)
+  let visibleTasks = (isSupabaseConfigured && user && !isAdmin)
     ? tasks.filter(t => t.assigned_to === user.id || t.reported_to === user.id)
     : tasks;
+  if (filterFromDate || filterToDate) {
+    visibleTasks = visibleTasks.filter(t => {
+      if (!t.due_date) return true;
+      if (filterFromDate && t.due_date < filterFromDate) return false;
+      if (filterToDate && t.due_date > filterToDate) return false;
+      return true;
+    });
+  }
+  const isDefaultDateFilter = (() => {
+    const d = new Date();
+    const defFrom = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`;
+    const defTo = localDateStr(d);
+    return filterFromDate === defFrom && filterToDate === defTo;
+  })();
+  const resetDateFilter = () => {
+    const d = new Date();
+    setFilterFromDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`);
+    setFilterToDate(localDateStr(d));
+  };
 
   return (
     <DashboardLayout>
@@ -699,6 +739,42 @@ export default function TasksPage() {
             >
               Thử tải lại ngay
             </button>
+          </div>
+        )}
+
+        {/* Date range filter */}
+        {!loading && (
+          <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">
+              <CalendarDays className="h-3.5 w-3.5" />
+              <span>Hạn hoàn thành:</span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+              <DatePickerInput
+                value={filterFromDate}
+                onChange={(e) => setFilterFromDate(e.target.value)}
+                className="w-36"
+              />
+              <span className="text-slate-400 dark:text-slate-500 text-sm font-medium">→</span>
+              <DatePickerInput
+                value={filterToDate}
+                onChange={(e) => setFilterToDate(e.target.value)}
+                className="w-36"
+              />
+              {!isDefaultDateFilter && (
+                <button
+                  onClick={resetDateFilter}
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors cursor-pointer"
+                  title="Đặt lại về mặc định"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Mặc định
+                </button>
+              )}
+              <span className="text-[11px] text-slate-400 dark:text-slate-500 ml-auto">
+                {visibleTasks.length} công việc
+              </span>
+            </div>
           </div>
         )}
 

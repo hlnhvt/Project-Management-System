@@ -69,7 +69,7 @@ function cleanBodyHtml(html) {
 }
 
 export default function NotificationsPage() {
-  const { user, hasPermission } = useAuth();
+  const { user, role: currentRole, hasPermission } = useAuth();
   const canCreate = hasPermission('notifications', 'create');
 
   const [items, setItems]       = useState([]);
@@ -123,6 +123,17 @@ export default function NotificationsPage() {
   }, [user]);
 
   useEffect(() => { fetchNotifications(); }, [fetchNotifications]);
+
+  // Tự động xóa thông báo cũ hơn 2 tháng (chỉ Admin, chạy ngầm khi vào trang)
+  useEffect(() => {
+    if (!user || !IS_CONFIGURED || currentRole?.name !== 'Admin') return;
+    withTimeout(supabase.rpc('cleanup_old_notifications'), 15000)
+      .then(({ data, error }) => {
+        if (!error && data > 0) fetchNotifications();
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, currentRole]);
 
   // Realtime: refresh on new notification
   // Unique channel name per effect invocation prevents StrictMode double-subscribe error.
@@ -303,6 +314,25 @@ export default function NotificationsPage() {
             )}
           </div>
         </div>
+
+        {/* Unread count banner */}
+        {!loading && unreadCount > 0 && (
+          <div className="mb-4 flex items-center gap-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/60 rounded-2xl px-4 py-3">
+            <span className="shrink-0 h-8 w-8 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
+              <Bell className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+            </span>
+            <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300 flex-1">
+              Bạn có <span className="text-indigo-600 dark:text-indigo-400">{unreadCount}</span> thông báo chưa đọc
+            </p>
+            <button
+              onClick={markAllRead}
+              className="shrink-0 flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 transition-colors"
+            >
+              <CheckCheck className="h-3.5 w-3.5" />
+              Đánh dấu tất cả đã đọc
+            </button>
+          </div>
+        )}
 
         {/* Error banner */}
         {error && (

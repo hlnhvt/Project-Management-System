@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { NAV_ITEMS } from '@/lib/navigation';
+import { useNotifCount } from '@/lib/notifStore';
 import {
   LayoutDashboard,
   CheckSquare,
@@ -38,6 +39,7 @@ import { useState, useEffect } from 'react';
 export default function Sidebar() {
   const { user, profile, role, logout, hasPermission } = useAuth();
   const pathname = usePathname();
+  const notifCount = useNotifCount();
   const [isOpen, setIsOpen] = useState(false);
   const [theme, setTheme] = useState('light');
 
@@ -151,7 +153,12 @@ export default function Sidebar() {
                 `}
               >
                 <Icon className={`h-4.5 w-4.5 transition-transform duration-200 group-hover:scale-110 ${isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-gray-400 group-hover:text-slate-800 dark:group-hover:text-white'}`} />
-                <span>{item.name}</span>
+                <span className="flex-1">{item.name}</span>
+                {item.resource === 'notifications' && notifCount > 0 && (
+                  <span className="min-w-[18px] h-[18px] bg-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center px-1 leading-none shadow-sm">
+                    {notifCount > 9 ? '9+' : notifCount}
+                  </span>
+                )}
               </Link>
             );
           })}

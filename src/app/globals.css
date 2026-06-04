@@ -161,6 +161,25 @@ body {
 .rich-content s    { text-decoration: line-through; }
 .rich-content p    { margin: 0.25rem 0; }
 
+/* Toast slide-in từ phải */
+@keyframes toast-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.animate-toast-in {
+  animation: toast-in 0.3s ease-out forwards;
+}
+
+/* Progress bar thu hẹp trong 5s */
+@keyframes shrink-x {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+.animate-shrink-x {
+  animation: shrink-x 5s linear forwards;
+  transform-origin: left;
+}
+
 /* Khắc phục lỗi trình duyệt tự động điền đè màu nền trắng/xanh của Input */
 input:-webkit-autofill,
 input:-webkit-autofill:hover, 

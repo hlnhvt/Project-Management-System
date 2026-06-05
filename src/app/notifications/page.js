@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import DashboardLayout from '@/components/DashboardLayout';
 import SimpleRichEditor from '@/components/SimpleRichEditor';
@@ -19,6 +20,7 @@ import {
   AlertCircle,
   RefreshCw,
   Search,
+  ExternalLink,
 } from 'lucide-react';
 
 const IS_CONFIGURED = !!(
@@ -69,6 +71,7 @@ function cleanBodyHtml(html) {
 }
 
 export default function NotificationsPage() {
+  const router = useRouter();
   const { user, role: currentRole, hasPermission } = useAuth();
   const canCreate = hasPermission('notifications', 'create');
 
@@ -109,7 +112,7 @@ export default function NotificationsPage() {
       const { data, error: err } = await withTimeout(
         supabase
           .from('notification_recipients')
-          .select('id, is_read, notifications(id, title, body, created_at, profiles!sender_id(full_name))')
+          .select('id, is_read, notifications(id, title, body, action_url, created_at, profiles!sender_id(full_name))')
           .eq('recipient_id', user.id)
           .order('created_at', { referencedTable: 'notifications', ascending: false })
           .limit(50)
@@ -181,6 +184,21 @@ export default function NotificationsPage() {
   const openDetail = (rec) => {
     setDetailItem(rec);
     if (!rec.is_read) markOneRead(rec.id);
+  };
+
+  // ── Navigate from notification action_url ──────────────────────────────────
+  const handleNavigate = (actionUrl) => {
+    if (!actionUrl) return;
+    // Dùng localStorage pattern để daily-logs đọc được khi mount
+    if (actionUrl.includes('/daily-logs')) {
+      const params = new URLSearchParams(actionUrl.split('?')[1] || '');
+      const gotoDate = params.get('goto_date');
+      const viewingUserId = params.get('viewing_user_id');
+      if (gotoDate) localStorage.setItem('aerotask_goto_log_date', gotoDate);
+      if (viewingUserId) localStorage.setItem('aerotask_viewing_user_id', viewingUserId);
+    }
+    setDetailItem(null);
+    router.push(actionUrl.split('?')[0]);
   };
 
   // ── Open create modal + fetch roles/users ─────────────────────────────────
@@ -656,10 +674,21 @@ export default function NotificationsPage() {
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-3 border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/80 dark:bg-slate-800/20 flex items-center justify-between text-xs text-slate-400 dark:text-gray-500">
-              <span>{timeAgo(detailItem.notifications?.created_at)}</span>
-              {(detailItem.notifications?.profiles?.full_name || detailItem.notifications?.sender_profile?.full_name) && (
-                <span>Từ: {detailItem.notifications?.profiles?.full_name || detailItem.notifications?.sender_profile?.full_name}</span>
+            <div className="px-6 py-3 border-t border-slate-100 dark:border-slate-700/60 bg-slate-50/80 dark:bg-slate-800/20 flex items-center justify-between gap-3 text-xs text-slate-400 dark:text-gray-500">
+              <div className="flex items-center gap-3 min-w-0">
+                <span>{timeAgo(detailItem.notifications?.created_at)}</span>
+                {(detailItem.notifications?.profiles?.full_name || detailItem.notifications?.sender_profile?.full_name) && (
+                  <span className="truncate">Từ: {detailItem.notifications?.profiles?.full_name || detailItem.notifications?.sender_profile?.full_name}</span>
+                )}
+              </div>
+              {detailItem.notifications?.action_url && (
+                <button
+                  onClick={() => handleNavigate(detailItem.notifications.action_url)}
+                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-[11px] transition-colors cursor-pointer shadow-sm shadow-indigo-600/20"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  Xem nhật ký
+                </button>
               )}
             </div>
           </div>

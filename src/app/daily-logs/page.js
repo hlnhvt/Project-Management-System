@@ -546,6 +546,7 @@ export default function DailyLogsPage() {
   };
 
   const submitComment = async () => {
+    console.log('>>> SUBMIT COMMENT CALLED, currentLog:', currentLog?.id, 'user:', user?.id);
     const text = newComment.trim();
     if (!text || !currentLog?.id || commentSubmitting) return;
     setCommentSubmitting(true);
@@ -565,15 +566,29 @@ export default function DailyLogsPage() {
       const { data, error } = await withTimeout(
         supabase.from('log_comments')
           .insert({ log_id: currentLog.id, user_id: user.id, content: text })
-          .select('*, profiles!user_id(full_name)')
+          .select('id, log_id, user_id, content, created_at')
           .single()
       );
       if (error) throw error;
       if (data) {
-        const comment = { ...data, author_name: data.profiles?.full_name || profile?.full_name || 'Tôi' };
+        const comment = { ...data, author_name: profile?.full_name || 'Tôi' };
         setLogComments(prev => prev.some(c => c.id === comment.id) ? prev : [...prev, comment]);
       }
       setNewComment('');
+      // Gửi thông báo tới chủ nhật ký (nếu người bình luận không phải chủ nhật ký)
+      console.log('[submitComment] currentLog.user_id:', currentLog.user_id, '| commenter user.id:', user?.id);
+      if (currentLog.user_id && currentLog.user_id !== user?.id) {
+        const logDateDisplay = currentLog.log_date
+          ? new Date(currentLog.log_date + 'T00:00:00').toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+          : '';
+        sendNotification({
+          title: 'Bình luận mới trên nhật ký của bạn',
+          body: `<p><strong>${profile?.full_name || 'Ai đó'}</strong> đã bình luận trên nhật ký${logDateDisplay ? ` ngày <strong>${logDateDisplay}</strong>` : ''} của bạn:</p><p style="margin-top:6px;color:#64748b;">"${text.length > 120 ? text.slice(0, 120) + '…' : text}"</p>`,
+          recipientId: currentLog.user_id,
+          senderId: user?.id,
+          actionUrl: `/daily-logs?goto_date=${currentLog.log_date}`,
+        });
+      }
     } catch (err) {
       alert('Lỗi: ' + err.message);
     } finally {

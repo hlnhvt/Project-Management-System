@@ -1,22 +1,26 @@
 import { supabase } from './supabase';
 
-/**
- * Gửi thông báo hệ thống tới một người dùng cụ thể.
- * Gọi API /api/notifications/create với Bearer token của user hiện tại.
- * Silent fail — notification không phải chức năng critical.
- *
- * @param {{ title: string, body: string, recipientId: string, senderId?: string }} opts
- */
-export async function sendNotification({ title, body, recipientId, senderId }) {
-  if (!recipientId) return;
-  // Không gửi self-notification
-  if (senderId && recipientId === senderId) return;
+export async function sendNotification({ title, body, recipientId, senderId, actionUrl }) {
+  console.log('[sendNotification] called →', { recipientId, senderId, title });
+
+  if (!recipientId) {
+    console.warn('[sendNotification] skip: no recipientId');
+    return;
+  }
+  if (senderId && recipientId === senderId) {
+    console.warn('[sendNotification] skip: self-notification');
+    return;
+  }
 
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) return;
+    if (!session?.access_token) {
+      console.warn('[sendNotification] skip: no active session');
+      return;
+    }
+    console.log('[sendNotification] calling API…');
 
-    await fetch('/api/notifications/create', {
+    const res = await fetch('/api/notifications/create', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -27,9 +31,19 @@ export async function sendNotification({ title, body, recipientId, senderId }) {
         body,
         targetType: 'user',
         targetUserIds: [recipientId],
+        actionUrl: actionUrl || null,
       }),
     });
-  } catch {
-    // Silently ignore — không ảnh hưởng luồng chính
+
+    const resData = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.error('[sendNotification] API error', res.status, resData);
+    } else if (resData.isPreviewMode) {
+      console.warn('[sendNotification] preview mode — not saved (check SUPABASE_SERVICE_ROLE_KEY)');
+    } else {
+      console.log('[sendNotification] success →', resData.message);
+    }
+  } catch (err) {
+    console.error('[sendNotification] exception:', err);
   }
 }

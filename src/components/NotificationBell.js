@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { supabase, withTimeout } from '@/lib/supabase';
 import notifStore from '@/lib/notifStore';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 const IS_CONFIGURED = !!(
   process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -36,6 +37,7 @@ function stripHtml(html) {
 
 export default function NotificationBell() {
   const { user }   = useAuth();
+  const router = useRouter();
   const [isOpen, setIsOpen]           = useState(false);
   const [items, setItems]             = useState([]);
   const [loading, setLoading]         = useState(false);
@@ -56,13 +58,17 @@ export default function NotificationBell() {
       const { data, error } = await withTimeout(
         supabase
           .from('notification_recipients')
-          .select('id, is_read, notifications(id, title, body, created_at)')
+          .select('id, is_read, notifications(id, title, body, action_url, created_at)')
           .eq('recipient_id', user.id)
           .order('created_at', { referencedTable: 'notifications', ascending: false })
           .limit(15)
       );
-      if (!error && data) setItems(data);
-    } catch {}
+      if (error) { console.error('[NotificationBell] fetchItems error:', error); }
+      else {
+        console.log('[NotificationBell] fetchItems data:', data?.length, 'items', data);
+        setItems(data || []);
+      }
+    } catch (err) { console.error('[NotificationBell] fetchItems exception:', err); }
     setLoading(false);
   }, [user]);
 
@@ -102,7 +108,7 @@ export default function NotificationBell() {
           const { data } = await withTimeout(
             supabase
               .from('notification_recipients')
-              .select('id, is_read, notifications(id, title, body, created_at)')
+              .select('id, is_read, notifications(id, title, body, action_url, created_at)')
               .eq('id', payload.new.id)
               .single()
           );
@@ -155,8 +161,21 @@ export default function NotificationBell() {
 
   const openToastDetail = () => {
     if (!toast) return;
+    const actionUrl = toast.notifications?.action_url;
     dismissToast();
-    openDetail(toast);
+    if (actionUrl) {
+      if (actionUrl.includes('/daily-logs')) {
+        const params = new URLSearchParams(actionUrl.split('?')[1] || '');
+        const gotoDate = params.get('goto_date');
+        if (gotoDate) localStorage.setItem('aerotask_goto_log_date', gotoDate);
+        const viewingUserId = params.get('viewing_user_id');
+        if (viewingUserId) localStorage.setItem('aerotask_viewing_user_id', viewingUserId);
+      }
+      setIsOpen(false);
+      router.push(actionUrl.split('?')[0]);
+    } else {
+      openDetail(toast);
+    }
   };
 
   return (

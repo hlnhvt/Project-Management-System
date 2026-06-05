@@ -1,9 +1,25 @@
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { supabase, supabaseAdmin, withTimeout } from '@/lib/supabase';
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+const IS_CONFIGURED = !!(
+  SUPABASE_URL && SUPABASE_URL !== 'your_supabase_project_url'
+);
+
+// Tạo client dùng JWT của user (thay thế khi không có service role key)
+function createUserClient(token) {
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
 
 export async function POST(request) {
   try {
-    if (!supabaseAdmin) {
+    if (!IS_CONFIGURED) {
       return NextResponse.json({
         success: true,
         isPreviewMode: true,
@@ -22,41 +38,48 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Token không hợp lệ hoặc đã hết hạn.' }, { status: 401 });
     }
 
-    // Check caller is Admin or Manager
+    // Ưu tiên dùng supabaseAdmin (service role), fallback sang user-scoped client
+    const dbClient = supabaseAdmin || createUserClient(token);
+
     const { data: profile } = await withTimeout(
       supabase.from('profiles').select('*, roles(name)').eq('id', requester.id).single()
     );
-    if (!profile || !['Admin', 'Manager'].includes(profile.roles?.name)) {
+
+    const { title, body, targetType, targetRoleId, targetUserIds, actionUrl } = await request.json();
+
+    // Gửi đến tất cả hoặc theo role → chỉ Admin/Manager mới được phép
+    if (targetType !== 'user' && (!profile || !['Admin', 'Manager'].includes(profile.roles?.name))) {
       return NextResponse.json({ error: 'Bạn không có quyền gửi thông báo.' }, { status: 403 });
     }
 
-    const { title, body, targetType, targetRoleId, targetUserIds } = await request.json();
     if (!title?.trim()) {
       return NextResponse.json({ error: 'Tiêu đề thông báo không được để trống.' }, { status: 400 });
     }
 
     // Insert notification record
     const { data: notification, error: notifError } = await withTimeout(
-      supabaseAdmin.from('notifications').insert({
+      dbClient.from('notifications').insert({
         title: title.trim(),
         body: body?.trim() || null,
         sender_id: requester.id,
+        action_url: actionUrl || null,
       }).select().single()
     );
     if (notifError) {
-      return NextResponse.json({ error: 'Không thể tạo thông báo.' }, { status: 500 });
+      console.error('[notifications/create] insert notification error:', notifError);
+      return NextResponse.json({ error: 'Không thể tạo thông báo.', detail: notifError.message }, { status: 500 });
     }
 
     // Resolve recipient IDs
     let recipientIds = [];
     if (targetType === 'all') {
       const { data: profiles } = await withTimeout(
-        supabaseAdmin.from('profiles').select('id')
+        dbClient.from('profiles').select('id')
       );
       recipientIds = (profiles || []).map(p => p.id);
     } else if (targetType === 'role' && targetRoleId) {
       const { data: profiles } = await withTimeout(
-        supabaseAdmin.from('profiles').select('id').eq('role_id', targetRoleId)
+        dbClient.from('profiles').select('id').eq('role_id', targetRoleId)
       );
       recipientIds = (profiles || []).map(p => p.id);
     } else if (targetType === 'user' && Array.isArray(targetUserIds) && targetUserIds.length) {
@@ -64,13 +87,13 @@ export async function POST(request) {
     }
 
     if (recipientIds.length === 0) {
-      await supabaseAdmin.from('notifications').delete().eq('id', notification.id);
+      await dbClient.from('notifications').delete().eq('id', notification.id);
       return NextResponse.json({ error: 'Không tìm thấy người nhận nào.' }, { status: 400 });
     }
 
     // Insert all recipients
     const { error: recipError } = await withTimeout(
-      supabaseAdmin.from('notification_recipients').insert(
+      dbClient.from('notification_recipients').insert(
         recipientIds.map(rid => ({
           notification_id: notification.id,
           recipient_id: rid,
@@ -79,7 +102,8 @@ export async function POST(request) {
       )
     );
     if (recipError) {
-      return NextResponse.json({ error: 'Không thể gửi thông báo đến người nhận.' }, { status: 500 });
+      console.error('[notifications/create] insert recipients error:', recipError);
+      return NextResponse.json({ error: 'Không thể gửi thông báo đến người nhận.', detail: recipError.message }, { status: 500 });
     }
 
     return NextResponse.json({
@@ -90,6 +114,6 @@ export async function POST(request) {
 
   } catch (error) {
     console.error('Lỗi API notifications/create:', error);
-    return NextResponse.json({ error: 'Lỗi hệ thống nội bộ.' }, { status: 500 });
+    return NextResponse.json({ error: 'Lỗi hệ thống nội bộ.', detail: error.message }, { status: 500 });
   }
 }

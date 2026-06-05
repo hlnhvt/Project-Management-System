@@ -10,8 +10,9 @@ import {
   ClipboardList, CheckCircle, Clock, Search, RefreshCw, Loader2,
   ShieldAlert, Calendar, ChevronDown, ChevronUp, FolderKanban,
   Check, X, AlertCircle, FileText, Users, Filter, ShieldOff,
-  SquareCheck, Square, User,
+  SquareCheck, Square, User, MessageSquare, Send,
 } from 'lucide-react';
+import { sendNotification } from '@/lib/sendNotification';
 
 // ─── Preview mock data ─────────────────────────────────────────────────────────
 
@@ -52,6 +53,15 @@ function localDateStr(d) {
     String(d.getMonth() + 1).padStart(2, '0'),
     String(d.getDate()).padStart(2, '0'),
   ].join('-');
+}
+
+function formatCommentTime(dateStr) {
+  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (diff < 60) return 'vừa xong';
+  if (diff < 3600) return `${Math.floor(diff / 60)} phút trước`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} giờ trước`;
+  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)} ngày trước`;
+  return new Date(dateStr).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
 function getDateRange(preset) {
@@ -96,6 +106,12 @@ export default function TeamLogsPage() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [approvingIds, setApprovingIds] = useState(new Set());
   const [bulkApproving, setBulkApproving] = useState(false);
+
+  // Quick comment state
+  const [logComments, setLogComments] = useState({});       // { [logId]: Comment[] }
+  const [commentInput, setCommentInput] = useState({});     // { [logId]: string }
+  const [commentLoadingIds, setCommentLoadingIds] = useState(new Set());
+  const [commentSubmittingIds, setCommentSubmittingIds] = useState(new Set());
 
   const isAdmin          = role?.name === 'Admin';
   const isManagerOrAdmin = isAdmin || role?.name === 'Manager';
@@ -239,6 +255,64 @@ export default function TeamLogsPage() {
   const pendingFiltered = useMemo(() => filteredLogs.filter(l => !l.is_approved), [filteredLogs]);
   const selectedPending = useMemo(() => [...selectedIds].filter(id => pendingFiltered.some(l => l.id === id)), [selectedIds, pendingFiltered]);
 
+  const memberMap = useMemo(() => {
+    const m = {};
+    members.forEach(mem => { m[mem.id] = mem.full_name; });
+    return m;
+  }, [members]);
+
+  // ── Comment actions ───────────────────────────────────────────────────────────
+
+  const fetchComments = async (logId) => {
+    if (!logId || !isSupabaseConfigured || logComments[logId]) return;
+    setCommentLoadingIds(prev => new Set([...prev, logId]));
+    try {
+      const { data } = await withTimeout(
+        supabase.from('log_comments')
+          .select('id, log_id, user_id, content, created_at')
+          .eq('log_id', logId)
+          .order('created_at', { ascending: true })
+      );
+      setLogComments(prev => ({ ...prev, [logId]: data || [] }));
+    } catch {}
+    setCommentLoadingIds(prev => { const s = new Set(prev); s.delete(logId); return s; });
+  };
+
+  const submitCommentOnLog = async (log) => {
+    const text = (commentInput[log.id] || '').trim();
+    if (!text || !isSupabaseConfigured || commentSubmittingIds.has(log.id)) return;
+    setCommentSubmittingIds(prev => new Set([...prev, log.id]));
+    try {
+      const { data, error } = await withTimeout(
+        supabase.from('log_comments')
+          .insert({ log_id: log.id, user_id: user.id, content: text })
+          .select('id, log_id, user_id, content, created_at')
+          .single()
+      );
+      if (error) throw error;
+      if (data) {
+        setLogComments(prev => ({ ...prev, [log.id]: [...(prev[log.id] || []), data] }));
+      }
+      setCommentInput(prev => ({ ...prev, [log.id]: '' }));
+      if (log.user_id && log.user_id !== user?.id) {
+        const logDateDisplay = log.log_date
+          ? new Date(log.log_date + 'T00:00:00').toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+          : '';
+        sendNotification({
+          title: 'Bình luận mới trên nhật ký của bạn',
+          body: `<p><strong>${profile?.full_name || 'Ai đó'}</strong> đã bình luận trên nhật ký${logDateDisplay ? ` ngày <strong>${logDateDisplay}</strong>` : ''} của bạn:</p><p style="margin-top:6px;color:#64748b;">"${text.length > 120 ? text.slice(0, 120) + '…' : text}"</p>`,
+          recipientId: log.user_id,
+          senderId: user?.id,
+          actionUrl: `/daily-logs?goto_date=${log.log_date}`,
+        });
+      }
+    } catch (err) {
+      alert('Lỗi: ' + err.message);
+    } finally {
+      setCommentSubmittingIds(prev => { const s = new Set(prev); s.delete(log.id); return s; });
+    }
+  };
+
   // ── Actions ───────────────────────────────────────────────────────────────────
 
   const handleApprove = async (logId) => {
@@ -299,7 +373,13 @@ export default function TeamLogsPage() {
     }
   };
 
-  const toggleExpand  = (id) => setExpandedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  const toggleExpand  = (id) => {
+    setExpandedIds(prev => {
+      const s = new Set(prev);
+      if (s.has(id)) { s.delete(id); } else { s.add(id); fetchComments(id); }
+      return s;
+    });
+  };
   const toggleSelect  = (id) => setSelectedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   const selectAllPending = () => setSelectedIds(new Set(pendingFiltered.map(l => l.id)));
   const clearSelection   = () => setSelectedIds(new Set());
@@ -632,21 +712,94 @@ export default function TeamLogsPage() {
                   </div>
 
                   {/* Expanded content */}
-                  {isExpanded && (
-                    <div className="border-t border-slate-100 dark:border-slate-900 px-4 pt-4 pb-3 mx-1 mb-1">
-                      <div
-                        className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_li]:mb-1 [&_strong]:font-semibold [&_code]:bg-slate-100 dark:[&_code]:bg-slate-900 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono"
-                        dangerouslySetInnerHTML={{ __html: log.content || '<p class="text-slate-400 italic">Chưa có nội dung.</p>' }}
-                      />
-                      <div className="mt-3 flex items-center justify-end">
-                        <button onClick={() => goToLog(log)}
-                          className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">
-                          <FileText className="h-3.5 w-3.5" />
-                          Xem chi tiết trong Nhật ký hàng ngày
-                        </button>
+                  {isExpanded && (() => {
+                    const comments = (logComments[log.id] || []).map(c => ({
+                      ...c,
+                      author_name: memberMap[c.user_id] || 'Thành viên',
+                    }));
+                    return (
+                      <div className="border-t border-slate-100 dark:border-slate-900 px-4 pt-4 pb-3 mx-1 mb-1">
+                        {/* Log content */}
+                        <div
+                          className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_li]:mb-1 [&_strong]:font-semibold [&_code]:bg-slate-100 dark:[&_code]:bg-slate-900 [&_code]:px-1 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono"
+                          dangerouslySetInnerHTML={{ __html: log.content || '<p class="text-slate-400 italic">Chưa có nội dung.</p>' }}
+                        />
+
+                        {/* Comment section */}
+                        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+                          <div className="flex items-center gap-1.5 mb-2.5">
+                            <MessageSquare className="h-3.5 w-3.5 text-slate-400" />
+                            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                              Bình luận{comments.length > 0 ? ` (${comments.length})` : ''}
+                            </span>
+                          </div>
+
+                          {commentLoadingIds.has(log.id) ? (
+                            <div className="flex items-center gap-1.5 py-1.5 mb-2">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
+                              <span className="text-xs text-slate-400">Đang tải bình luận...</span>
+                            </div>
+                          ) : comments.length > 0 ? (
+                            <div className="space-y-2 mb-3">
+                              {comments.map(c => (
+                                <div key={c.id} className="flex gap-2">
+                                  <div className="h-6 w-6 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold flex items-center justify-center shrink-0">
+                                    {c.author_name?.charAt(0).toUpperCase() || '?'}
+                                  </div>
+                                  <div className="flex-1 bg-slate-50 dark:bg-slate-900/40 rounded-xl px-3 py-2">
+                                    <div className="flex items-baseline gap-2 flex-wrap">
+                                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{c.author_name}</span>
+                                      <span className="text-[10px] text-slate-400 dark:text-slate-600">{formatCommentTime(c.created_at)}</span>
+                                    </div>
+                                    <p className="text-[12px] text-slate-600 dark:text-slate-300 mt-0.5 whitespace-pre-wrap leading-relaxed">{c.content}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-slate-400 dark:text-slate-600 italic mb-2.5">Chưa có bình luận nào.</p>
+                          )}
+
+                          {/* Input */}
+                          <div className="flex gap-2 items-start">
+                            <div className="h-6 w-6 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 text-[10px] font-bold flex items-center justify-center shrink-0 mt-1">
+                              {profile?.full_name?.charAt(0).toUpperCase() || '?'}
+                            </div>
+                            <div className="flex-1 flex gap-2">
+                              <input
+                                type="text"
+                                value={commentInput[log.id] || ''}
+                                onChange={e => setCommentInput(prev => ({ ...prev, [log.id]: e.target.value }))}
+                                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitCommentOnLog(log); } }}
+                                placeholder="Thêm bình luận… (Enter để gửi)"
+                                className="flex-1 px-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-600"
+                                disabled={commentSubmittingIds.has(log.id)}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => submitCommentOnLog(log)}
+                                disabled={!commentInput[log.id]?.trim() || commentSubmittingIds.has(log.id)}
+                                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 shrink-0"
+                              >
+                                {commentSubmittingIds.has(log.id)
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : <Send className="h-3 w-3" />}
+                                Gửi
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex items-center justify-end">
+                          <button onClick={() => goToLog(log)}
+                            className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer">
+                            <FileText className="h-3.5 w-3.5" />
+                            Xem chi tiết trong Nhật ký hàng ngày
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               );
             })}

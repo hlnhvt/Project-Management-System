@@ -546,7 +546,6 @@ export default function DailyLogsPage() {
   };
 
   const submitComment = async () => {
-    console.log('>>> SUBMIT COMMENT CALLED, currentLog:', currentLog?.id, 'user:', user?.id);
     const text = newComment.trim();
     if (!text || !currentLog?.id || commentSubmitting) return;
     setCommentSubmitting(true);
@@ -576,7 +575,6 @@ export default function DailyLogsPage() {
       }
       setNewComment('');
       // Gửi thông báo tới chủ nhật ký (nếu người bình luận không phải chủ nhật ký)
-      console.log('[submitComment] currentLog.user_id:', currentLog.user_id, '| commenter user.id:', user?.id);
       if (currentLog.user_id && currentLog.user_id !== user?.id) {
         const logDateDisplay = currentLog.log_date
           ? new Date(currentLog.log_date + 'T00:00:00').toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })

@@ -35,6 +35,7 @@ import {
   ExternalLink,
   MessageSquare,
   Send,
+  BedDouble,
 } from 'lucide-react';
 
 const MOCK_LOGS = [
@@ -214,6 +215,7 @@ export default function DailyLogsPage() {
   const mockLogsRef = useRef(MOCK_LOGS);
   const [mockLogs, setMockLogs] = useState(MOCK_LOGS); // SSR-safe; localStorage loaded in useEffect below
   const [calendarLogs, setCalendarLogs] = useState([]);
+  const [calendarAbsences, setCalendarAbsences] = useState([]); // date strings for the current calendar month
   const [dayLogs, setDayLogs] = useState([]);
   const [currentLog, setCurrentLog] = useState(null);
   const [logLoading, setLogLoading] = useState(false);
@@ -243,6 +245,12 @@ export default function DailyLogsPage() {
 
   // Approval
   const [approving, setApproving] = useState(false);
+
+  // Absence marking (manager/admin only, when viewing another member's log)
+  const [dayAbsence, setDayAbsence] = useState(null);
+  const [markingAbsence, setMarkingAbsence] = useState(false);
+  const [absenceReason, setAbsenceReason] = useState('');
+  const [savingAbsence, setSavingAbsence] = useState(false);
 
   // Projects & sprints for log tagging
   const [projects, setProjects] = useState([]);
@@ -480,6 +488,29 @@ export default function DailyLogsPage() {
     }
   };
 
+  const fetchCalendarAbsences = async () => {
+    if (!isManagerOrAdmin || isViewingOwnLogs) { setCalendarAbsences([]); return; }
+    const targetUserId = getTargetUserId();
+    if (!targetUserId || targetUserId.startsWith('preview')) { setCalendarAbsences([]); return; }
+    const { year, month } = calendarMonth;
+    const pad = String(month + 1).padStart(2, '0');
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const startDate = `${year}-${pad}-01`;
+    const endDate = `${year}-${pad}-${String(daysInMonth).padStart(2, '0')}`;
+    try {
+      const { data } = await withTimeout(
+        supabase.from('day_absences')
+          .select('date')
+          .eq('user_id', targetUserId)
+          .gte('date', startDate)
+          .lte('date', endDate)
+      );
+      setCalendarAbsences((data || []).map(a => a.date));
+    } catch {
+      setCalendarAbsences([]);
+    }
+  };
+
   // Fetch ALL logs for the selected date — replaces the old single-log fetch
   const fetchDayLogs = async () => {
     const gen = ++fetchDayLogsGenRef.current;
@@ -610,6 +641,72 @@ export default function DailyLogsPage() {
     }
   };
 
+  // ─── Day absence (manager/admin only) ───────────────────────────────────────
+
+  const fetchDayAbsence = async () => {
+    if (!isManagerOrAdmin || isViewingOwnLogs) { setDayAbsence(null); return; }
+    const targetUserId = getTargetUserId();
+    if (!targetUserId || targetUserId.startsWith('preview')) {
+      setDayAbsence(null);
+      return;
+    }
+    try {
+      const { data } = await withTimeout(
+        supabase.from('day_absences')
+          .select('id, user_id, date, reason, recorded_by, created_at')
+          .eq('user_id', targetUserId)
+          .eq('date', selectedDate)
+          .maybeSingle()
+      );
+      setDayAbsence(data || null);
+    } catch {
+      setDayAbsence(null);
+    }
+  };
+
+  const handleMarkAbsence = async () => {
+    const targetUserId = getTargetUserId();
+    if (!targetUserId || savingAbsence) return;
+    setSavingAbsence(true);
+    try {
+      const { data, error } = await withTimeout(
+        supabase.from('day_absences')
+          .upsert(
+            { user_id: targetUserId, date: selectedDate, reason: absenceReason.trim() || null, recorded_by: user?.id },
+            { onConflict: 'user_id,date' }
+          )
+          .select('id, user_id, date, reason, recorded_by, created_at')
+          .single()
+      );
+      if (error) throw error;
+      setDayAbsence(data);
+      setCalendarAbsences(prev => prev.includes(selectedDate) ? prev : [...prev, selectedDate]);
+      setMarkingAbsence(false);
+      setAbsenceReason('');
+    } catch (err) {
+      alert('Lỗi khi lưu: ' + err.message);
+    } finally {
+      setSavingAbsence(false);
+    }
+  };
+
+  const handleDeleteAbsence = async () => {
+    if (!dayAbsence?.id || savingAbsence) return;
+    setSavingAbsence(true);
+    try {
+      const { error } = await withTimeout(
+        supabase.from('day_absences').delete().eq('id', dayAbsence.id)
+      );
+      if (error) throw error;
+      setDayAbsence(null);
+      setCalendarAbsences(prev => prev.filter(d => d !== selectedDate));
+    } catch (err) {
+      alert('Lỗi khi xóa: ' + err.message);
+    } finally {
+      setSavingAbsence(false);
+    }
+  };
+
   const fetchTeamLogsForDate = async () => {
     if (!isManagerOrAdmin) return;
     const members = isSupabaseConfigured ? teamMembers : MOCK_TEAM;
@@ -677,8 +774,10 @@ export default function DailyLogsPage() {
   }, []);
 
   useEffect(() => { fetchCalendarLogs(); }, [calendarMonth, viewingUserId, isSupabaseConfigured, mockLogs]);
+  useEffect(() => { fetchCalendarAbsences(); }, [calendarMonth, viewingUserId, isSupabaseConfigured]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { fetchDayLogs(); }, [selectedDate, viewingUserId, isSupabaseConfigured, mockLogs]);
   useEffect(() => { fetchTeamLogsForDate(); }, [selectedDate, teamMembers, isSupabaseConfigured]);
+  useEffect(() => { fetchDayAbsence(); setMarkingAbsence(false); setAbsenceReason(''); }, [selectedDate, viewingUserId, isSupabaseConfigured]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setUcListPage(1); }, [ucListSearch, ucListFilters, ucListFilterProject]);
 
   // Comments: fetch + realtime subscription khi currentLog thay đổi
@@ -1597,6 +1696,7 @@ export default function DailyLogsPage() {
                 const status = getDateStatus(dateStr);
                 const isToday = dateStr === todayStr;
                 const isSelected = dateStr === selectedDate;
+                const isAbsent = calendarAbsences.includes(dateStr);
                 // Count logs for the dot indicator
                 const logsCount = calendarLogs.filter(l => l.log_date === dateStr).length;
                 return (
@@ -1605,9 +1705,12 @@ export default function DailyLogsPage() {
                     onClick={() => handleDateSelect(dateStr)}
                     className={[
                       'h-9 w-full flex flex-col items-center justify-center rounded-lg text-xs font-bold transition-all duration-150 cursor-pointer relative',
-                      isSelected && status === 'approved' ? 'bg-emerald-500 text-white ring-2 ring-inset ring-indigo-600 shadow-sm'
+                      isSelected && isAbsent ? 'bg-rose-500 text-white ring-2 ring-inset ring-rose-700 shadow-sm'
+                        : isSelected && status === 'approved' ? 'bg-emerald-500 text-white ring-2 ring-inset ring-indigo-600 shadow-sm'
                         : isSelected && status === 'pending' ? 'bg-amber-400 text-white ring-2 ring-inset ring-indigo-600 shadow-sm'
                         : isSelected ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
+                        : isAbsent && isToday ? 'ring-2 ring-inset ring-rose-500 bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+                        : isAbsent ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 hover:bg-rose-200 dark:hover:bg-rose-800/40'
                         : isToday && status === 'approved' ? 'ring-2 ring-inset ring-indigo-500 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
                         : isToday && status === 'pending' ? 'ring-2 ring-inset ring-indigo-500 bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
                         : isToday ? 'ring-2 ring-inset ring-indigo-500 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30'
@@ -1640,6 +1743,12 @@ export default function DailyLogsPage() {
                 <span className="h-6 w-6 rounded-md bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 shrink-0" />
                 Chưa có ghi chú
               </div>
+              {isManagerOrAdmin && !isViewingOwnLogs && (
+                <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                  <span className="h-6 w-6 rounded-md bg-rose-100 dark:bg-rose-900/30 border border-rose-300/60 dark:border-rose-700/50 shrink-0" />
+                  Nghỉ / không làm
+                </div>
+              )}
             </div>
           </div>
 
@@ -1769,6 +1878,77 @@ export default function DailyLogsPage() {
                   <button onClick={handleRevoke} disabled={approving} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-sm shadow-rose-600/20 disabled:opacity-50 transition-all cursor-pointer shrink-0">
                     {approving ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Đang xử lý...</> : 'Hủy phê duyệt'}
                   </button>
+                )}
+              </div>
+            )}
+
+            {/* Absence / off-day bar — visible to managers viewing another member */}
+            {isManagerOrAdmin && !isViewingOwnLogs && isSupabaseConfigured && (
+              <div className="px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-rose-50/40 dark:bg-rose-950/10">
+                {dayAbsence ? (
+                  <div className="flex items-start gap-3">
+                    <BedDouble className="h-4 w-4 text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                        {getViewingUserName()} đã được đánh dấu <strong>nghỉ / không làm</strong> ngày này
+                      </p>
+                      {dayAbsence.reason && (
+                        <p className="mt-0.5 text-[11px] text-rose-500/80 dark:text-rose-400/70 italic">Lý do: {dayAbsence.reason}</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleDeleteAbsence}
+                      disabled={savingAbsence}
+                      className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-rose-300 dark:border-rose-700 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/30 disabled:opacity-50 transition-all cursor-pointer"
+                    >
+                      {savingAbsence ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                      Bỏ đánh dấu
+                    </button>
+                  </div>
+                ) : markingAbsence ? (
+                  <div className="flex items-end gap-2">
+                    <BedDouble className="h-4 w-4 text-rose-400 dark:text-rose-500 shrink-0 mb-1.5" />
+                    <div className="flex-1 min-w-0">
+                      <label className="block text-[10px] font-bold text-rose-500 dark:text-rose-400 uppercase tracking-wider mb-1">
+                        Lý do nghỉ (không bắt buộc)
+                      </label>
+                      <input
+                        type="text"
+                        value={absenceReason}
+                        onChange={e => setAbsenceReason(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleMarkAbsence(); if (e.key === 'Escape') { setMarkingAbsence(false); setAbsenceReason(''); } }}
+                        placeholder="Nhập lý do..."
+                        autoFocus
+                        className="w-full text-xs px-3 py-1.5 rounded-lg border border-rose-300 dark:border-rose-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-rose-400"
+                      />
+                    </div>
+                    <button
+                      onClick={handleMarkAbsence}
+                      disabled={savingAbsence}
+                      className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white disabled:opacity-50 transition-all cursor-pointer"
+                    >
+                      {savingAbsence ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Xác nhận'}
+                    </button>
+                    <button
+                      onClick={() => { setMarkingAbsence(false); setAbsenceReason(''); }}
+                      disabled={savingAbsence}
+                      className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 transition-all cursor-pointer"
+                    >
+                      Hủy
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <BedDouble className="h-4 w-4 text-slate-300 dark:text-slate-600 shrink-0" />
+                    <p className="flex-1 text-xs text-slate-400 dark:text-slate-600">Ngày này chưa được đánh dấu nghỉ.</p>
+                    <button
+                      onClick={() => setMarkingAbsence(true)}
+                      className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-rose-300 dark:border-rose-700 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all cursor-pointer"
+                    >
+                      <BedDouble className="h-3 w-3" />
+                      Đánh dấu nghỉ
+                    </button>
+                  </div>
                 )}
               </div>
             )}

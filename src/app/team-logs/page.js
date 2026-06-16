@@ -10,7 +10,7 @@ import {
   ClipboardList, CheckCircle, Clock, Search, RefreshCw, Loader2,
   ShieldAlert, Calendar, ChevronDown, ChevronUp, FolderKanban,
   Check, X, AlertCircle, FileText, Users, Filter, ShieldOff,
-  SquareCheck, Square, User, MessageSquare, Send,
+  SquareCheck, Square, User, MessageSquare, Send, BedDouble, Plus,
 } from 'lucide-react';
 import { sendNotification } from '@/lib/sendNotification';
 
@@ -32,6 +32,13 @@ const _MOCK_LOGS = [
   { id:'tl7', user_id:'tm1', log_date:'2026-06-01', title:'Implement DatePickerInput component',  content:'<p>Tạo component <strong>DatePickerInput</strong> dùng chung. Overlay hidden input với native picker, format vi-VN.</p>',                                                                  is_approved:true,  approved_at:'2026-06-02T08:30:00Z', project_id:'proj1', project_code:'PROJ-01', project_name:'PROJEXA System',      author_name:'Phạm Minh Developer', approver_name:'Trần Thị Manager', created_at:'2026-06-01T16:00:00Z' },
   { id:'tl8', user_id:'tm2', log_date:'2026-05-31', title:'Cập nhật giao diện Dark Mode',         content:'<p>Kiểm tra và fix các màu text không đủ tương phản trong dark mode. Cập nhật 12 components bị ảnh hưởng.</p>',                                                                           is_approved:false, approved_at:null,                    project_id:'proj1', project_code:'PROJ-01', project_name:'PROJEXA System',      author_name:'Lê Hoàng Coder',      approver_name:null,                  created_at:'2026-05-31T17:30:00Z' },
   { id:'tl9', user_id:'tm3', log_date:'2026-05-30', title:'Xây dựng wireframe trang Tổng quan',   content:'<p>Thiết kế wireframe cho Dashboard mới. Bổ sung widget thống kê nhanh và biểu đồ tiến độ sprint.</p>',                                                                                   is_approved:true,  approved_at:'2026-05-31T09:00:00Z', project_id:'proj2', project_code:'PROJ-02', project_name:'National Law Portal', author_name:'Nguyễn Thu BA',       approver_name:'Trần Thị Manager', created_at:'2026-05-30T17:00:00Z' },
+];
+
+// ─── Preview mock data – Absences ─────────────────────────────────────────────
+
+const _MOCK_ABSENCES = [
+  { id: 'ab1', user_id: 'tm1', date: '2026-06-02', reason: 'Nghỉ phép năm', recorded_by: 'mgr', member_name: 'Phạm Minh Developer', recorder_name: 'Trần Thị Manager', created_at: '2026-06-02T08:00:00Z' },
+  { id: 'ab2', user_id: 'tm3', date: '2026-05-31', reason: '',             recorded_by: 'mgr', member_name: 'Nguyễn Thu BA',        recorder_name: 'Trần Thị Manager', created_at: '2026-05-31T08:30:00Z' },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -107,6 +114,15 @@ export default function TeamLogsPage() {
   const [approvingIds, setApprovingIds] = useState(new Set());
   const [bulkApproving, setBulkApproving] = useState(false);
 
+  // Absence state
+  const [allAbsences, setAllAbsences] = useState([]);
+  const [absenceModal, setAbsenceModal] = useState(false);
+  const [absenceMemberId, setAbsenceMemberId] = useState('');
+  const [absenceDate, setAbsenceDate] = useState(localDateStr(new Date()));
+  const [absenceReason, setAbsenceReason] = useState('');
+  const [absenceSubmitting, setAbsenceSubmitting] = useState(false);
+  const [deletingAbsenceIds, setDeletingAbsenceIds] = useState(new Set());
+
   // Quick comment state
   const [logComments, setLogComments] = useState({});       // { [logId]: Comment[] }
   const [commentInput, setCommentInput] = useState({});     // { [logId]: string }
@@ -180,6 +196,20 @@ export default function TeamLogsPage() {
         project_name:  projMap[l.project_id]?.name || null,
         project_code:  projMap[l.project_id]?.code || null,
       })));
+
+      // Fetch absences trong cùng khoảng ngày
+      const { data: aData } = await withTimeout(
+        supabase.from('day_absences')
+          .select('id, user_id, date, reason, recorded_by, created_at')
+          .gte('date', from)
+          .lte('date', to)
+          .order('date', { ascending: false })
+      );
+      setAllAbsences((aData || []).map(a => ({
+        ...a,
+        member_name:   profileMap[a.user_id]    || '—',
+        recorder_name: profileMap[a.recorded_by] || '—',
+      })));
     } catch (err) {
       console.error('[TeamLogs] fetchData error:', err);
       setError(err.message || 'Không thể tải dữ liệu.');
@@ -194,8 +224,8 @@ export default function TeamLogsPage() {
     if (!url || !key || url.includes('your_supabase_project_url')) {
       setIsSupabaseConfigured(false);
       const r = getDateRange('7d');
-      const mockFiltered = _MOCK_LOGS.filter(l => l.log_date >= r.from && l.log_date <= r.to);
-      setAllLogs(mockFiltered);
+      setAllLogs(_MOCK_LOGS.filter(l => l.log_date >= r.from && l.log_date <= r.to));
+      setAllAbsences(_MOCK_ABSENCES.filter(a => a.date >= r.from && a.date <= r.to));
       setMembers(_MOCK_MEMBERS);
       setLoading(false);
       return;
@@ -212,8 +242,8 @@ export default function TeamLogsPage() {
     setToDate(r.to);
     if (isSupabaseConfigured) fetchData(r.from, r.to);
     else {
-      const mockFiltered = _MOCK_LOGS.filter(l => l.log_date >= r.from && l.log_date <= r.to);
-      setAllLogs(mockFiltered);
+      setAllLogs(_MOCK_LOGS.filter(l => l.log_date >= r.from && l.log_date <= r.to));
+      setAllAbsences(_MOCK_ABSENCES.filter(a => a.date >= r.from && a.date <= r.to));
     }
     setSelectedIds(new Set());
   };
@@ -223,8 +253,8 @@ export default function TeamLogsPage() {
     setSelectedIds(new Set());
     if (isSupabaseConfigured) fetchData(fromDate, toDate);
     else {
-      const mockFiltered = _MOCK_LOGS.filter(l => l.log_date >= fromDate && l.log_date <= toDate);
-      setAllLogs(mockFiltered);
+      setAllLogs(_MOCK_LOGS.filter(l => l.log_date >= fromDate && l.log_date <= toDate));
+      setAllAbsences(_MOCK_ABSENCES.filter(a => a.date >= fromDate && a.date <= toDate));
     }
   };
 
@@ -246,11 +276,31 @@ export default function TeamLogsPage() {
       return l.title?.toLowerCase().includes(q) || l.author_name?.toLowerCase().includes(q) || stripHtml(l.content).toLowerCase().includes(q);
     }), [allLogs, filterMembers, filterProject, filterApproval, search]);
 
+  const filteredAbsences = useMemo(() => {
+    if (filterApproval !== 'all') return [];
+    return allAbsences.filter(a =>
+      (filterMembers.length === 0 || filterMembers.includes(a.user_id)) &&
+      (!filterProject)
+    );
+  }, [allAbsences, filterMembers, filterProject, filterApproval]);
+
+  const combinedItems = useMemo(() => {
+    const logs = filteredLogs.map(l => ({ ...l, _type: 'log' }));
+    const absences = filteredAbsences.map(a => ({ ...a, _type: 'absence' }));
+    return [...logs, ...absences].sort((a, b) => {
+      const dA = a._type === 'log' ? a.log_date : a.date;
+      const dB = b._type === 'log' ? b.log_date : b.date;
+      if (dA !== dB) return dB.localeCompare(dA);
+      return (b.created_at || '').localeCompare(a.created_at || '');
+    });
+  }, [filteredLogs, filteredAbsences]);
+
   const stats = useMemo(() => ({
     total:    filteredLogs.length,
     approved: filteredLogs.filter(l => l.is_approved).length,
     pending:  filteredLogs.filter(l => !l.is_approved).length,
-  }), [filteredLogs]);
+    absent:   filteredAbsences.length,
+  }), [filteredLogs, filteredAbsences]);
 
   const pendingFiltered = useMemo(() => filteredLogs.filter(l => !l.is_approved), [filteredLogs]);
   const selectedPending = useMemo(() => [...selectedIds].filter(id => pendingFiltered.some(l => l.id === id)), [selectedIds, pendingFiltered]);
@@ -390,6 +440,63 @@ export default function TeamLogsPage() {
     router.push('/daily-logs');
   };
 
+  const openAbsenceModal = () => {
+    setAbsenceMemberId('');
+    setAbsenceDate(localDateStr(new Date()));
+    setAbsenceReason('');
+    setAbsenceModal(true);
+  };
+
+  const handleMarkAbsence = async () => {
+    if (!absenceMemberId || !absenceDate) return;
+    setAbsenceSubmitting(true);
+    const memberName   = memberMap[absenceMemberId] || '—';
+    const recorderName = profile?.full_name || '—';
+    try {
+      if (!isSupabaseConfigured) {
+        const mock = {
+          id: 'ab-' + Math.random().toString(36).substr(2, 9),
+          user_id: absenceMemberId, date: absenceDate,
+          reason: absenceReason.trim(), recorded_by: user?.id || '',
+          member_name: memberName, recorder_name: recorderName,
+          created_at: new Date().toISOString(),
+        };
+        setAllAbsences(prev => [mock, ...prev.filter(a => !(a.user_id === absenceMemberId && a.date === absenceDate))]);
+        setAbsenceModal(false);
+        return;
+      }
+      const { data, error } = await withTimeout(
+        supabase.from('day_absences')
+          .upsert({ user_id: absenceMemberId, date: absenceDate, reason: absenceReason.trim() || null, recorded_by: user?.id }, { onConflict: 'user_id,date' })
+          .select('id, user_id, date, reason, recorded_by, created_at')
+          .single()
+      );
+      if (error) throw error;
+      const newRecord = { ...data, member_name: memberName, recorder_name: recorderName };
+      setAllAbsences(prev => [newRecord, ...prev.filter(a => a.id !== data.id && !(a.user_id === data.user_id && a.date === data.date))]);
+      setAbsenceModal(false);
+    } catch (err) {
+      alert('Lỗi: ' + err.message);
+    } finally {
+      setAbsenceSubmitting(false);
+    }
+  };
+
+  const handleDeleteAbsence = async (id) => {
+    setDeletingAbsenceIds(prev => new Set([...prev, id]));
+    try {
+      if (isSupabaseConfigured) {
+        const { error } = await withTimeout(supabase.from('day_absences').delete().eq('id', id));
+        if (error) throw error;
+      }
+      setAllAbsences(prev => prev.filter(a => a.id !== id));
+    } catch (err) {
+      alert('Lỗi: ' + err.message);
+    } finally {
+      setDeletingAbsenceIds(prev => { const s = new Set(prev); s.delete(id); return s; });
+    }
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────────
 
   if (!isManagerOrAdmin) return (
@@ -416,12 +523,21 @@ export default function TeamLogsPage() {
               Xem và phê duyệt nhật ký của tất cả thành viên trong nhóm
             </p>
           </div>
-          {isSupabaseConfigured && (
-            <button onClick={() => handleSearch()} title="Làm mới"
-              className="p-2 rounded-xl text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/10 transition-colors cursor-pointer shrink-0">
-              <RefreshCw className="h-4 w-4" />
-            </button>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {isManagerOrAdmin && (
+              <button onClick={openAbsenceModal}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-bold border border-rose-500/20 transition-colors cursor-pointer">
+                <BedDouble className="h-3.5 w-3.5" />
+                Đánh dấu nghỉ
+              </button>
+            )}
+            {isSupabaseConfigured && (
+              <button onClick={() => handleSearch()} title="Làm mới"
+                className="p-2 rounded-xl text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-500/10 transition-colors cursor-pointer">
+                <RefreshCw className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* ── Filter panel ── */}
@@ -555,6 +671,7 @@ export default function TeamLogsPage() {
               { label: 'Tổng',      val: stats.total,    cls: 'text-slate-600 dark:text-slate-300' },
               { label: 'Đã duyệt',  val: stats.approved, cls: 'text-emerald-600 dark:text-emerald-400' },
               { label: 'Chờ duyệt', val: stats.pending,  cls: 'text-amber-600 dark:text-amber-400' },
+              { label: 'Nghỉ',      val: stats.absent,   cls: 'text-rose-500 dark:text-rose-400' },
             ].map(({ label, val, cls }) => (
               <div key={label} className="flex items-center gap-1.5">
                 <span className={`text-xl font-extrabold ${cls}`}>{val}</span>
@@ -603,7 +720,7 @@ export default function TeamLogsPage() {
             <Loader2 className="h-6 w-6 animate-spin mr-2" />
             <span className="text-sm">Đang tải nhật ký...</span>
           </div>
-        ) : filteredLogs.length === 0 ? (
+        ) : combinedItems.length === 0 ? (
           <div className="bg-slate-50 dark:bg-gray-950/40 border border-slate-200 dark:border-gray-900 rounded-2xl p-10 text-center">
             <FileText className="h-10 w-10 text-slate-300 dark:text-slate-700 mx-auto mb-3" />
             <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Không có nhật ký nào trong khoảng thời gian này.</p>
@@ -611,7 +728,56 @@ export default function TeamLogsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {filteredLogs.map(log => {
+            {combinedItems.map(item => {
+              // ── Absence card ───────────────────────────────────────────────
+              if (item._type === 'absence') {
+                return (
+                  <div key={item.id}
+                    className="bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 rounded-2xl shadow-sm">
+                    <div className="flex items-center gap-3 p-4">
+                      <div className="w-4 shrink-0" />
+                      {/* Date badge */}
+                      <div className="shrink-0 flex flex-col items-center justify-center w-11 h-11 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 dark:text-rose-400">
+                        <span className="text-[11px] font-bold leading-none">{item.date?.slice(8, 10)}</span>
+                        <span className="text-[9px] font-semibold leading-none mt-0.5">/{item.date?.slice(5, 7)}</span>
+                      </div>
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-rose-500 dark:text-rose-400 mb-0.5">{item.member_name}</p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <BedDouble className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                          <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Nghỉ</span>
+                          {item.reason && (
+                            <span className="text-xs text-slate-400 dark:text-slate-500">— {item.reason}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />{isoToDisplay(item.date)}
+                          </span>
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500">Ghi bởi: {item.recorder_name}</span>
+                        </div>
+                      </div>
+                      {/* Badge + delete */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="px-2 py-0.5 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[10px] font-bold border border-rose-500/20">
+                          Nghỉ
+                        </span>
+                        {isManagerOrAdmin && (
+                          <button onClick={() => handleDeleteAbsence(item.id)} disabled={deletingAbsenceIds.has(item.id)}
+                            title="Xóa ghi nhận nghỉ"
+                            className="p-1.5 rounded-xl text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer disabled:opacity-40">
+                            {deletingAbsenceIds.has(item.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              // ── Log card ───────────────────────────────────────────────────
+              const log = item;
               const isExpanded  = expandedIds.has(log.id);
               const isSelected  = selectedIds.has(log.id);
               const isApproving = approvingIds.has(log.id);
@@ -807,6 +973,81 @@ export default function TeamLogsPage() {
         )}
 
       </div>
+
+      {/* ── Absence modal ── */}
+      {absenceModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-500/15 backdrop-blur-md" onClick={() => setAbsenceModal(false)} />
+          <div className="relative w-full max-w-sm bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded-3xl shadow-2xl overflow-hidden animate-scale-up">
+            {/* Header */}
+            <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-200 dark:border-gray-800">
+              <h2 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                <BedDouble className="h-4 w-4 text-rose-500" />
+                Đánh dấu ngày nghỉ
+              </h2>
+              <button onClick={() => setAbsenceModal(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-5 space-y-4">
+              {/* Member */}
+              <div>
+                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 block">Thành viên <span className="text-rose-500">*</span></label>
+                <select value={absenceMemberId} onChange={e => setAbsenceMemberId(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-700 dark:text-slate-200 cursor-pointer appearance-none">
+                  <option value="">Chọn thành viên...</option>
+                  {members.filter(m => m.id !== user?.id).map(m => (
+                    <option key={m.id} value={m.id}>{m.full_name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Date */}
+              <div>
+                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 block">Ngày nghỉ <span className="text-rose-500">*</span></label>
+                <DatePickerInput
+                  value={absenceDate}
+                  onChange={e => setAbsenceDate(e.target.value)}
+                  className="w-full"
+                  placeholder="Chọn ngày"
+                />
+              </div>
+
+              {/* Reason */}
+              <div>
+                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5 block">
+                  Lý do nghỉ <span className="text-slate-400 font-normal">(tùy chọn)</span>
+                </label>
+                <input
+                  type="text"
+                  value={absenceReason}
+                  onChange={e => setAbsenceReason(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleMarkAbsence(); }}
+                  placeholder="Nghỉ phép, ốm đau, việc riêng..."
+                  autoFocus
+                  className="w-full px-3 py-2 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-rose-500 text-slate-700 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-600"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3 border-t border-slate-100 dark:border-gray-800 bg-slate-50/80 dark:bg-gray-950/40 flex items-center justify-end gap-2">
+              <button onClick={() => setAbsenceModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer">
+                Hủy
+              </button>
+              <button onClick={handleMarkAbsence} disabled={!absenceMemberId || !absenceDate || absenceSubmitting}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-500 hover:bg-rose-600 text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5">
+                {absenceSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <BedDouble className="h-3.5 w-3.5" />}
+                Xác nhận nghỉ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }

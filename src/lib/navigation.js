@@ -52,6 +52,13 @@ export const NAV_ITEMS = [
     href: '/statistics',
   },
   {
+    resource: 'documents',
+    label: 'Tài liệu',
+    adminLabel: 'Tài liệu liên quan (Documents)',
+    desc: 'Tổng hợp tất cả tài liệu, đường dẫn được khai báo trong nhật ký hàng ngày',
+    href: '/documents',
+  },
+  {
     resource: 'notifications',
     label: 'Thông báo',
     adminLabel: 'Quản lý Thông báo',

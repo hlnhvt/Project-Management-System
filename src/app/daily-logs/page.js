@@ -1889,7 +1889,7 @@ export default function DailyLogsPage() {
                   <div className="flex items-start gap-3">
                     <BedDouble className="h-4 w-4 text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                      <p className="text-xs font-bold text-rose-600 dark:text-rose-400">
                         {getViewingUserName()} đã được đánh dấu <strong>nghỉ / không làm</strong> ngày này
                       </p>
                       {dayAbsence.reason && (
@@ -1940,7 +1940,7 @@ export default function DailyLogsPage() {
                 ) : (
                   <div className="flex items-center gap-3">
                     <BedDouble className="h-4 w-4 text-slate-300 dark:text-slate-600 shrink-0" />
-                    <p className="flex-1 text-xs text-slate-400 dark:text-slate-600">Ngày này chưa được đánh dấu nghỉ.</p>
+                    <p className="flex-1 text-xs text-slate-400 dark:text-slate-600"></p>
                     <button
                       onClick={() => setMarkingAbsence(true)}
                       className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-rose-300 dark:border-rose-700 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-all cursor-pointer"

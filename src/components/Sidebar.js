@@ -21,6 +21,7 @@ import {
   BarChart2,
   ClipboardList,
   Bell,
+  Link2,
 } from 'lucide-react';
 const ICON_MAP = {
   dashboard:     LayoutDashboard,
@@ -30,6 +31,7 @@ const ICON_MAP = {
   team_logs:     ClipboardList,
   projects:      FolderKanban,
   statistics:    BarChart2,
+  documents:     Link2,
   notifications: Bell,
   users:         Users,
   roles:         ShieldCheck,

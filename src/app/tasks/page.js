@@ -744,36 +744,44 @@ export default function TasksPage() {
 
         {/* Date range filter */}
         {!loading && (
-          <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3 shadow-sm">
+          <div className="flex flex-col gap-2 bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-3 shadow-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
             <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400 shrink-0">
               <CalendarDays className="h-3.5 w-3.5" />
               <span>Hạn hoàn thành:</span>
             </div>
-            <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
-              <DatePickerInput
-                value={filterFromDate}
-                onChange={(e) => setFilterFromDate(e.target.value)}
-                className="w-36"
-              />
-              <span className="text-slate-400 dark:text-slate-500 text-sm font-medium">→</span>
-              <DatePickerInput
-                value={filterToDate}
-                onChange={(e) => setFilterToDate(e.target.value)}
-                className="w-36"
-              />
-              {!isDefaultDateFilter && (
-                <button
-                  onClick={resetDateFilter}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors cursor-pointer"
-                  title="Đặt lại về mặc định"
-                >
-                  <RotateCcw className="h-3 w-3" />
-                  Mặc định
-                </button>
-              )}
-              <span className="text-[11px] text-slate-400 dark:text-slate-500 ml-auto">
-                {visibleTasks.length} công việc
-              </span>
+            <div className="flex flex-col gap-2 w-full sm:flex-row sm:items-center sm:flex-1 sm:min-w-0 sm:gap-2">
+              <div className="flex items-center gap-2 w-full min-w-0">
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <DatePickerInput
+                    value={filterFromDate}
+                    onChange={(e) => setFilterFromDate(e.target.value)}
+                    className="w-full"
+                  />
+                </div>
+                <span className="text-slate-400 dark:text-slate-500 text-sm font-medium shrink-0">→</span>
+                <div className="flex-1 min-w-0 overflow-hidden">
+                  <DatePickerInput
+                    value={filterToDate}
+                    onChange={(e) => setFilterToDate(e.target.value)}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {!isDefaultDateFilter && (
+                  <button
+                    onClick={resetDateFilter}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors cursor-pointer"
+                    title="Đặt lại về mặc định"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    Mặc định
+                  </button>
+                )}
+                <span className="text-[11px] text-slate-400 dark:text-slate-500 sm:ml-auto">
+                  {visibleTasks.length} công việc
+                </span>
+              </div>
             </div>
           </div>
         )}

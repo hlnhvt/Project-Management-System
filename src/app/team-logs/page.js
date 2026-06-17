@@ -544,24 +544,27 @@ export default function TeamLogsPage() {
         <div className="bg-white dark:bg-gray-950/60 border border-slate-200 dark:border-gray-900 rounded-2xl p-5 shadow-sm space-y-4">
 
           {/* Date range row */}
-          <div className="flex flex-wrap items-center gap-3">
-            <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+          <div className="flex flex-col gap-2">
             {/* Quick presets */}
-            {[
-              { key: 'today', label: 'Hôm nay' },
-              { key: '7d',    label: '7 ngày' },
-              { key: '30d',   label: '30 ngày' },
-              { key: 'month', label: 'Tháng này' },
-            ].map(p => (
-              <button key={p.key} onClick={() => applyPreset(p.key)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${preset === p.key ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 hover:text-indigo-600 dark:hover:text-indigo-400'}`}>
-                {p.label}
-              </button>
-            ))}
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <DatePickerInput value={fromDate} onChange={e => { setFromDate(e.target.value); setPreset(''); }} className="flex-1 min-w-28" placeholder="Từ ngày" />
+            <div className="flex items-center gap-2 flex-wrap">
+              <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+              {[
+                { key: 'today', label: 'Hôm nay' },
+                { key: '7d',    label: '7 ngày' },
+                { key: '30d',   label: '30 ngày' },
+                { key: 'month', label: 'Tháng này' },
+              ].map(p => (
+                <button key={p.key} onClick={() => applyPreset(p.key)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${preset === p.key ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 hover:text-indigo-600 dark:hover:text-indigo-400'}`}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            {/* Date inputs — always on their own row, no overflow */}
+            <div className="flex items-center gap-2 w-full">
+              <DatePickerInput value={fromDate} onChange={e => { setFromDate(e.target.value); setPreset(''); }} className="flex-1 min-w-0" placeholder="Từ ngày" />
               <span className="text-slate-400 text-xs shrink-0">→</span>
-              <DatePickerInput value={toDate}   onChange={e => { setToDate(e.target.value);   setPreset(''); }} className="flex-1 min-w-28" placeholder="Đến ngày" />
+              <DatePickerInput value={toDate}   onChange={e => { setToDate(e.target.value);   setPreset(''); }} className="flex-1 min-w-0" placeholder="Đến ngày" />
               <button onClick={handleSearch}
                 className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors cursor-pointer shrink-0 flex items-center gap-1.5">
                 <Search className="h-3.5 w-3.5" /> Tìm

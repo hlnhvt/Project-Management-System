@@ -36,21 +36,17 @@ export default function DashboardLayout({ children }) {
         </div>
       </main>
 
-      {/* Reload / reconnect button — fixed top-right */}
-      <div className="fixed top-4 right-6 z-40">
+      {/* Floating bottom-right group: reload + notification bell */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-center gap-2">
         <button
           onClick={handleReload}
           disabled={reloading}
           title="Tải lại trang / Kết nối lại Supabase"
-          className="flex items-center gap-1.5 pl-2.5 pr-3 py-1.5 rounded-xl bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-600 shadow-sm hover:shadow-md text-xs font-medium transition-all cursor-pointer disabled:opacity-60"
+          className="flex items-center gap-1.5 pl-2.5 pr-3 py-1.5 rounded-xl bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-300 dark:hover:border-indigo-600 shadow-sm hover:shadow-md text-xs font-medium transition-all cursor-pointer disabled:opacity-60"
         >
           <RefreshCw className={`h-3.5 w-3.5 shrink-0 ${reloading ? 'animate-spin' : ''}`} />
-          <span className="hidden sm:inline">Kết nối lại</span>
+          <span>Kết nối lại</span>
         </button>
-      </div>
-
-      {/* Floating notification bell — fixed bottom-right */}
-      <div className="fixed bottom-6 right-6 z-50">
         <NotificationBell />
       </div>
     </div>

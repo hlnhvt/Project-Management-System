@@ -30,6 +30,8 @@ import {
   BookOpen,
   FolderKanban,
   SlidersHorizontal,
+  Code2,
+  Briefcase,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -107,6 +109,13 @@ export default function UseCasesPage() {
   // Trạng thái modal Thêm / Sửa Use Case
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  // Trạng thái modal Cập nhật trạng thái (Dev/BA)
+  const [isStatusUpdateModalOpen, setIsStatusUpdateModalOpen] = useState(false);
+  const [statusUpdateData, setStatusUpdateData] = useState({ uc: null, type: 'dev', newStatus: '', reason: '' });
+
+  // Lịch sử trạng thái
+  const [historyDetailType, setHistoryDetailType] = useState(null); // 'dev' | 'ba' | null
   
   const [editingUCId, setEditingUCId] = useState('');
   const [ucCode, setUcCode] = useState('');
@@ -154,7 +163,7 @@ export default function UseCasesPage() {
   const [expandedUseCases, setExpandedUseCases] = useState({});
 
   // Trạng thái Sắp xếp danh sách Use Cases
-  const [sortBy, setSortBy] = useState('code');
+  const [sortBy, setSortBy] = useState('stt');
   const [sortOrder, setSortOrder] = useState('asc');
 
   // Phân trang
@@ -448,6 +457,81 @@ export default function UseCasesPage() {
     setIsViewModalOpen(true);
     fetchUCLogNotes(uc.id);
     fetchUCStatusLogsFromDB(uc.id);
+  };
+
+  // Đóng Modal Cập nhật trạng thái
+  const handleCloseStatusUpdateModal = () => {
+    setIsStatusUpdateModalOpen(false);
+    setStatusUpdateData({ uc: null, type: 'dev', newStatus: '', reason: '' });
+    setModalError('');
+    setModalSuccess('');
+  };
+
+  // Cập nhật trạng thái nhanh
+  const handleUpdateStatusSubmit = async (e) => {
+    e.preventDefault();
+    const { uc, type, newStatus, reason } = statusUpdateData;
+    if (!uc || !newStatus) return;
+
+    setModalSubmitting(true);
+    setModalError('');
+    setModalSuccess('');
+
+    try {
+      if (!isSupabaseConfigured) {
+        // Mock mode
+        await new Promise(r => setTimeout(r, 600));
+        setUseCases(prev => prev.map(u => u.id === uc.id ? { ...u, [type === 'dev' ? 'status_dev' : 'status_ba']: newStatus } : u));
+        setModalSuccess('Cập nhật trạng thái thành công (Mock)');
+        setTimeout(handleCloseStatusUpdateModal, 1000);
+        return;
+      }
+
+      // Update use_cases table
+      const statusField = type === 'dev' ? 'status_dev' : 'status_ba';
+      const { error: updateError } = await withTimeout(
+        supabase.from('use_cases').update({ [statusField]: newStatus }).eq('id', uc.id)
+      );
+      if (updateError) throw updateError;
+
+      const now = new Date().toISOString();
+
+      // Insert into uc_status_logs
+      const statusTypeLabel = `${type === 'dev' ? 'Dev' : 'BA'}: ${newStatus}`;
+      await withTimeout(
+        supabase.from('uc_status_logs').insert({
+          uc_id: uc.id,
+          status_type: statusTypeLabel,
+          confirmed_at: now,
+          confirmed_by_name: user?.user_metadata?.full_name || user?.email || 'Ẩn danh'
+        })
+      );
+
+      // Insert into daily_logs to show in history
+      if (reason.trim()) {
+        await withTimeout(
+          supabase.from('daily_logs').insert({
+            user_id: user.id,
+            project_id: uc.project_id || null,
+            log_date: now.split('T')[0],
+            title: `Cập nhật trạng thái ${type.toUpperCase()}: ${newStatus}`,
+            content: `Chuyển trạng thái từ ${type === 'dev' ? uc.status_dev : uc.status_ba} sang ${newStatus}.\nLý do: ${reason}`,
+            related_ucs: [{ uc_id: uc.id, note: reason }],
+            is_approved: true
+          })
+        );
+      }
+
+      // Update local state
+      setUseCases(prev => prev.map(u => u.id === uc.id ? { ...u, [statusField]: newStatus } : u));
+      setModalSuccess('Cập nhật trạng thái thành công!');
+      setTimeout(handleCloseStatusUpdateModal, 1000);
+    } catch (err) {
+      console.error('Lỗi cập nhật trạng thái:', err);
+      setModalError(err.message || 'Có lỗi xảy ra khi cập nhật.');
+    } finally {
+      setModalSubmitting(false);
+    }
   };
 
   // Tạo mới Use Case
@@ -1281,7 +1365,7 @@ export default function UseCasesPage() {
     e.preventDefault();
     resizingCol.current = col;
     resizeStartX.current = e.clientX;
-    resizeStartW.current = colWidths[col];
+    resizeStartW.current = colWidths[col] || 100;
     const onMove = (ev) => {
       const diff = ev.clientX - resizeStartX.current;
       setColWidths(prev => ({ ...prev, [resizingCol.current]: Math.max(60, resizeStartW.current + diff) }));
@@ -1663,13 +1747,13 @@ export default function UseCasesPage() {
                       />
                     </th>
                     {COLS.filter(c => visibleCols[c.key]).map(({ key, label }) => (
-                      <th key={key} className="relative px-4 py-3 overflow-hidden whitespace-nowrap" style={{ width: colWidths[key], minWidth: 60 }}>
+                      <th key={key} className="relative px-4 py-3 overflow-visible whitespace-nowrap group/th" style={{ width: colWidths[key] || 100, minWidth: 60 }}>
                         <span className="block truncate text-center pr-3">{label}</span>
                         <div
-                          className="absolute inset-y-0 right-0 w-3 cursor-col-resize z-10 flex items-stretch justify-end"
+                          className="absolute inset-y-0 -right-2 w-4 cursor-col-resize z-20 flex items-stretch justify-center opacity-0 group-hover/th:opacity-100 transition-opacity"
                           onMouseDown={(e) => handleColResizeStart(key, e)}
                         >
-                          <div className="w-[2px] h-full bg-slate-200 dark:bg-slate-700 hover:bg-indigo-400 transition-colors" />
+                          <div className="w-[3px] h-full bg-indigo-400 dark:bg-indigo-500 rounded-full" />
                         </div>
                       </th>
                     ))}
@@ -1817,15 +1901,36 @@ export default function UseCasesPage() {
                               >
                                 <Eye className="h-4.5 w-4.5" />
                               </button>
-  
-                              {canUpdate && (
+
+                              {currentRole?.name === 'Developer' && (
                                 <button
-                                  onClick={() => handleOpenEditModal(uc)}
-                                  className="p-2 rounded-lg text-slate-400 dark:text-slate-500 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-500/10 transition-all cursor-pointer"
-                                  title="Chỉnh sửa kịch bản"
+                                  onClick={() => { setStatusUpdateData({ uc, type: 'dev', newStatus: uc.status_dev || '', reason: '' }); setIsStatusUpdateModalOpen(true); }}
+                                  className="p-2 rounded-lg text-slate-400 dark:text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-500/10 transition-all cursor-pointer"
+                                  title="Đổi trạng thái Dev"
                                 >
-                                  <Edit2 className="h-4.5 w-4.5" />
+                                  <Code2 className="h-4.5 w-4.5" />
                                 </button>
+                              )}
+                              {currentRole?.name === 'Business Analyst' && (
+                                <button
+                                  onClick={() => { setStatusUpdateData({ uc, type: 'ba', newStatus: uc.status_ba || '', reason: '' }); setIsStatusUpdateModalOpen(true); }}
+                                  className="p-2 rounded-lg text-slate-400 dark:text-slate-500 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-sky-500/10 transition-all cursor-pointer"
+                                  title="Đổi trạng thái BA"
+                                >
+                                  <Briefcase className="h-4.5 w-4.5" />
+                                </button>
+                              )}
+
+                              {canUpdate && (
+                                <>
+                                  <button
+                                    onClick={() => handleOpenEditModal(uc)}
+                                    className="p-2 rounded-lg text-slate-400 dark:text-slate-500 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-500/10 transition-all cursor-pointer"
+                                    title="Chỉnh sửa kịch bản"
+                                  >
+                                    <Edit2 className="h-4.5 w-4.5" />
+                                  </button>
+                                </>
                               )}
   
                               {canDelete && (
@@ -2094,16 +2199,18 @@ export default function UseCasesPage() {
             </div>
 
             <div className="pt-5 mt-5 border-t border-slate-200 dark:border-slate-800 flex gap-3">
-              <button
-                onClick={() => {
-                  setIsViewModalOpen(false);
-                  handleOpenEditModal(viewUC);
-                }}
-                className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-505 text-white text-xs font-bold shadow-lg shadow-indigo-600/10 cursor-pointer flex items-center justify-center gap-1.5 transition-all"
-              >
-                <Edit2 className="h-4 w-4" />
-                Chỉnh sửa kịch bản
-              </button>
+              {canUpdate && (
+                <button
+                  onClick={() => {
+                    setIsViewModalOpen(false);
+                    handleOpenEditModal(viewUC);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-505 text-white text-xs font-bold shadow-lg shadow-indigo-600/10 cursor-pointer flex items-center justify-center gap-1.5 transition-all"
+                >
+                  <Edit2 className="h-4 w-4" />
+                  Chỉnh sửa kịch bản
+                </button>
+              )}
               <button
                 onClick={() => setIsViewModalOpen(false)}
                 className="py-2.5 px-6 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-655 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
@@ -2620,62 +2727,107 @@ export default function UseCasesPage() {
                 );
               })()}
 
-              {/* Ghi chú từ nhật ký — chỉ Manager/Admin mới thấy */}
-              {isManagerOrAdmin && (
-                <div className="space-y-2.5 pt-1">
-                  <div className="flex items-center gap-2">
-                    <BookOpen className="h-3.5 w-3.5 text-slate-400" />
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                      Ghi chú từ Nhật ký
-                    </span>
-                    {!ucLogNotesLoading && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500">
-                        {ucLogNotes.length}
-                      </span>
-                    )}
-                  </div>
-
-                  {ucLogNotesLoading ? (
-                    <div className="flex items-center gap-2 py-3 text-slate-400 dark:text-slate-500">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span className="text-xs">Đang tải ghi chú...</span>
-                    </div>
-                  ) : ucLogNotes.length === 0 ? (
-                    <p className="text-xs text-slate-400 dark:text-slate-600 italic py-2">
-                      Chưa có thành viên nào ghi chú về Use Case này trong nhật ký.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {ucLogNotes.map((n, idx) => (
-                        <div key={`${n.log_id}-${idx}`} className="bg-slate-50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800/60 rounded-xl p-3">
-                          <div className="flex items-center gap-2 mb-2">
-                            {n.avatar_url ? (
-                              <img src={n.avatar_url} alt={n.user_name} className="h-6 w-6 rounded-full object-cover shrink-0" />
-                            ) : (
-                              <div className="h-6 w-6 rounded-full bg-gradient-to-tr from-indigo-400 to-violet-500 flex items-center justify-center text-[9px] font-bold text-white shrink-0">
-                                {n.user_name.charAt(0)}
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
-                              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">{n.user_name}</span>
-                              <div className="flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500 shrink-0">
-                                <CalendarDays className="h-3 w-3" />
-                                <span>{n.log_date}</span>
-                              </div>
-                            </div>
-                          </div>
-                          {n.log_title && (
-                            <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-1.5 truncate">
-                              Từ nhật ký: <em>{n.log_title}</em>
-                            </p>
-                          )}
-                          <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">{n.note}</p>
+              {/* Lịch sử cập nhật trạng thái & Ghi chú từ nhật ký — chỉ Manager/Admin mới thấy */}
+              {isManagerOrAdmin && (() => {
+                const devStatusLogs = ucLogNotes.filter(n => n.log_title && n.log_title.startsWith('Cập nhật trạng thái DEV:'));
+                const baStatusLogs = ucLogNotes.filter(n => n.log_title && n.log_title.startsWith('Cập nhật trạng thái BA:'));
+                const generalNotes = ucLogNotes.filter(n => !n.log_title || (!n.log_title.startsWith('Cập nhật trạng thái DEV:') && !n.log_title.startsWith('Cập nhật trạng thái BA:')));
+                
+                return (
+                  <div className="space-y-4 pt-1">
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Lịch sử DEV */}
+                      <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800/60 rounded-xl p-3 flex flex-col">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Code2 className="h-3.5 w-3.5 text-emerald-500" />
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Lịch sử DEV</span>
                         </div>
-                      ))}
+                        <div className="flex-1">
+                          <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Trạng thái: {viewUC.status_dev || 'Chưa bắt đầu'}</span>
+                        </div>
+                        <button 
+                          onClick={() => setHistoryDetailType('dev')}
+                          className="mt-2 w-full py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold transition-colors cursor-pointer"
+                        >
+                          Xem chi tiết ({devStatusLogs.length})
+                        </button>
+                      </div>
+
+                      {/* Lịch sử BA */}
+                      <div className="bg-slate-50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800/60 rounded-xl p-3 flex flex-col">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Briefcase className="h-3.5 w-3.5 text-sky-500" />
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Lịch sử BA</span>
+                        </div>
+                        <div className="flex-1">
+                          <span className="text-xs font-semibold text-sky-600 dark:text-sky-400">Trạng thái: {viewUC.status_ba || 'Chưa bắt đầu'}</span>
+                        </div>
+                        <button 
+                          onClick={() => setHistoryDetailType('ba')}
+                          className="mt-2 w-full py-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-700 dark:text-sky-400 text-[10px] font-bold transition-colors cursor-pointer"
+                        >
+                          Xem chi tiết ({baStatusLogs.length})
+                        </button>
+                      </div>
                     </div>
-                  )}
-                </div>
-              )}
+
+                    {/* Ghi chú chung */}
+                    <div className="space-y-2.5">
+                      <div className="flex items-center gap-2">
+                        <BookOpen className="h-3.5 w-3.5 text-slate-400" />
+                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                          Ghi chú chung
+                        </span>
+                        {!ucLogNotesLoading && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500">
+                            {generalNotes.length}
+                          </span>
+                        )}
+                      </div>
+
+                      {ucLogNotesLoading ? (
+                        <div className="flex items-center gap-2 py-3 text-slate-400 dark:text-slate-500">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span className="text-xs">Đang tải ghi chú...</span>
+                        </div>
+                      ) : generalNotes.length === 0 ? (
+                        <p className="text-xs text-slate-400 dark:text-slate-600 italic py-2">
+                          Chưa có ghi chú chung nào cho Use Case này.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          {generalNotes.map((n, idx) => (
+                            <div key={`${n.log_id}-${idx}`} className="bg-slate-50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800/60 rounded-xl p-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                {n.avatar_url ? (
+                                  <img src={n.avatar_url} alt={n.user_name} className="h-6 w-6 rounded-full object-cover shrink-0" />
+                                ) : (
+                                  <div className="h-6 w-6 rounded-full bg-gradient-to-tr from-indigo-400 to-violet-500 flex items-center justify-center text-[9px] font-bold text-white shrink-0">
+                                    {n.user_name.charAt(0)}
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                                  <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">{n.user_name}</span>
+                                  <div className="flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500 shrink-0">
+                                    <CalendarDays className="h-3 w-3" />
+                                    <span>{n.log_date}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              {n.log_title && (
+                                <p className="text-[10px] text-slate-400 dark:text-slate-500 mb-1.5 truncate">
+                                  Từ nhật ký: <em>{n.log_title}</em>
+                                </p>
+                              )}
+                              <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">{n.note}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Footer actions */}
@@ -2684,17 +2836,19 @@ export default function UseCasesPage() {
                 {viewUC.created_at ? `Tạo: ${new Date(viewUC.created_at).toLocaleDateString('vi-VN')}` : ''}
               </p>
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsViewModalOpen(false);
-                    handleOpenEditModal(viewUC);
-                  }}
-                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
-                >
-                  <Edit2 className="h-3.5 w-3.5" />
-                  Chỉnh sửa
-                </button>
+                {canUpdate && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsViewModalOpen(false);
+                      handleOpenEditModal(viewUC);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Edit2 className="h-3.5 w-3.5" />
+                    Chỉnh sửa
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setIsViewModalOpen(false)}
@@ -3368,6 +3522,173 @@ export default function UseCasesPage() {
         </div>
       )}
 
+      {/* MODAL: UPDATE STATUS */}
+      {isStatusUpdateModalOpen && statusUpdateData.uc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-500/15 backdrop-blur-md" onClick={!modalSubmitting ? handleCloseStatusUpdateModal : undefined} />
+          <div className="glass-panel w-full max-w-md rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 relative z-10 bg-white/95 dark:bg-slate-900/95 animate-scale-up">
+            <button
+              onClick={handleCloseStatusUpdateModal}
+              disabled={modalSubmitting}
+              className="absolute top-4 right-4 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-5 select-none">
+              <div className="h-10 w-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                {statusUpdateData.type === 'dev' ? <Code2 className="h-5 w-5" /> : <Briefcase className="h-5 w-5" />}
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">
+                  Cập nhật trạng thái {statusUpdateData.type === 'dev' ? 'Dev' : 'BA'}
+                </h3>
+                <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                  Mã UC: <span className="font-bold text-indigo-500">{statusUpdateData.uc.code}</span>
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleUpdateStatusSubmit} className="space-y-4">
+              {modalError && (
+                <div className="bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-xs p-3 rounded-xl flex items-center gap-2">
+                  <ShieldAlert className="h-4 w-4 shrink-0" />
+                  <span className="font-semibold">{modalError}</span>
+                </div>
+              )}
+              {modalSuccess && (
+                <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs p-3 rounded-xl flex items-center gap-2">
+                  <Check className="h-4 w-4 shrink-0 animate-bounce" />
+                  <span className="font-semibold">{modalSuccess}</span>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider block">Trạng thái mới</label>
+                <div className="relative">
+                  <select
+                    value={statusUpdateData.newStatus}
+                    onChange={(e) => setStatusUpdateData({ ...statusUpdateData, newStatus: e.target.value })}
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-800 dark:text-slate-200 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/50 appearance-none"
+                    disabled={modalSubmitting}
+                    required
+                  >
+                    <option value="" disabled>-- Chọn trạng thái --</option>
+                    <option value="Chưa bắt đầu">Chưa bắt đầu</option>
+                    <option value="Đang thực hiện">Đang thực hiện</option>
+                    <option value="Bị chặn">Bị chặn</option>
+                    <option value="Hoàn thành">Hoàn thành</option>
+                  </select>
+                  <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider block">Lý do / Ghi chú (Sẽ lưu vào nhật ký)</label>
+                <textarea
+                  value={statusUpdateData.reason}
+                  onChange={(e) => setStatusUpdateData({ ...statusUpdateData, reason: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-3 text-xs text-slate-800 dark:text-slate-200 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/50 resize-none"
+                  rows="3"
+                  placeholder="Nhập lý do chuyển đổi trạng thái..."
+                  disabled={modalSubmitting}
+                  required
+                ></textarea>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={handleCloseStatusUpdateModal}
+                  disabled={modalSubmitting}
+                  className="px-4 py-2 rounded-xl text-slate-500 dark:text-slate-400 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={modalSubmitting || !statusUpdateData.newStatus || !statusUpdateData.reason.trim()}
+                  className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/20 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {modalSubmitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  Cập nhật
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* MODAL: HISTORY DETAIL */}
+      {historyDetailType && viewUC && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-500/30 backdrop-blur-sm" onClick={() => setHistoryDetailType(null)} />
+          <div className="glass-panel w-full max-w-lg rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 relative z-10 bg-white/95 dark:bg-slate-900/95 animate-scale-up flex flex-col" style={{ maxHeight: '85vh' }}>
+            <button
+              onClick={() => setHistoryDetailType(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-5 select-none shrink-0 border-b border-slate-100 dark:border-slate-800/60 pb-4">
+              <div className={`h-10 w-10 rounded-xl border flex items-center justify-center ${historyDetailType === 'dev' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400' : 'bg-sky-500/10 border-sky-500/20 text-sky-600 dark:text-sky-400'}`}>
+                {historyDetailType === 'dev' ? <Code2 className="h-5 w-5" /> : <Briefcase className="h-5 w-5" />}
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">
+                  Lịch sử cập nhật trạng thái {historyDetailType === 'dev' ? 'DEV' : 'BA'}
+                </h3>
+                <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                  Mã UC: <span className="font-bold text-indigo-500">{viewUC.code}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-2 space-y-3">
+              {(() => {
+                const logs = ucLogNotes.filter(n => n.log_title && n.log_title.startsWith(`Cập nhật trạng thái ${historyDetailType === 'dev' ? 'DEV' : 'BA'}:`));
+                if (logs.length === 0) {
+                  return (
+                    <div className="text-center py-8 text-slate-400 dark:text-slate-600 text-xs italic">
+                      Chưa có lịch sử cập nhật nào.
+                    </div>
+                  );
+                }
+                return logs.map((n, idx) => (
+                  <div key={idx} className="bg-white dark:bg-slate-950/40 border border-slate-200/80 dark:border-slate-800/80 rounded-xl p-4 shadow-sm">
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-2">
+                        {n.avatar_url ? (
+                          <img src={n.avatar_url} alt={n.user_name} className="h-7 w-7 rounded-full object-cover shrink-0 ring-2 ring-white dark:ring-slate-900 shadow-sm" />
+                        ) : (
+                          <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-indigo-400 to-violet-500 flex items-center justify-center text-[10px] font-bold text-white shrink-0 ring-2 ring-white dark:ring-slate-900 shadow-sm">
+                            {n.user_name.charAt(0)}
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{n.user_name}</p>
+                          <p className="text-[9px] text-slate-400 flex items-center gap-1 mt-0.5">
+                            <CalendarDays className="h-3 w-3" />
+                            {n.log_date} • {n.created_at ? new Date(n.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : ''}
+                          </p>
+                        </div>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2 py-1 rounded-md shrink-0 border ${historyDetailType === 'dev' ? 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20' : 'bg-sky-50 text-sky-600 border-sky-100 dark:bg-sky-500/10 dark:text-sky-400 dark:border-sky-500/20'}`}>
+                        {n.log_title.replace(`Cập nhật trạng thái ${historyDetailType === 'dev' ? 'DEV' : 'BA'}: `, '')}
+                      </span>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-3 border border-slate-100 dark:border-slate-800/50">
+                      <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-line">
+                        {n.note}
+                      </p>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 }

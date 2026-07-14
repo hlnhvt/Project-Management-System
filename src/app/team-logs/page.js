@@ -409,10 +409,14 @@ export default function TeamLogsPage() {
     const approverName = profile?.full_name || 'Quản lý';
     try {
       if (isSupabaseConfigured) {
-        const { error } = await withTimeout(
-          supabase.from('daily_logs').update({ is_approved: true, approved_by: user?.id || null, approved_at: approvedAt }).in('id', selectedPending)
-        );
-        if (error) throw error;
+        const CHUNK_SIZE = 50;
+        for (let i = 0; i < selectedPending.length; i += CHUNK_SIZE) {
+          const chunk = selectedPending.slice(i, i + CHUNK_SIZE);
+          const { error } = await withTimeout(
+            supabase.from('daily_logs').update({ is_approved: true, approved_by: user?.id || null, approved_at: approvedAt }).in('id', chunk)
+          );
+          if (error) throw error;
+        }
       }
       setAllLogs(prev => prev.map(l => selectedPending.includes(l.id) ? { ...l, is_approved: true, approved_at: approvedAt, approver_name: approverName } : l));
       setSelectedIds(new Set());

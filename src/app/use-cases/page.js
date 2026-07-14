@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Fragment, useRef } from 'react';
+import { useEffect, useState, Fragment, useRef, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import DashboardLayout from '@/components/DashboardLayout';
 import { supabase, withTimeout } from '@/lib/supabase';
@@ -166,7 +166,7 @@ export default function UseCasesPage() {
 
   const [colWidths, setColWidths] = useState(() => {
     const defaults = {
-      code: 100, name: 180, description: 220, difficulty: 100, bmt: 70,
+      stt: 60, code: 100, name: 180, description: 220, difficulty: 100, bmt: 70,
       ba: 140, dev: 140, status_ba: 120, status_dev: 120, status_test: 120,
       reviewed_at: 120, docs_updated_at: 130, dev_completed_at: 120, doc_reviewed_at: 130,
     };
@@ -179,7 +179,7 @@ export default function UseCasesPage() {
   });
   const [visibleCols, setVisibleCols] = useState(() => {
     const defaults = {
-      code: true, name: true, description: true, difficulty: true, bmt: true,
+      stt: true, code: true, name: true, description: true, difficulty: true, bmt: true,
       ba: true, dev: true, status_ba: true, status_dev: true, status_test: true,
       reviewed_at: true, docs_updated_at: true, dev_completed_at: true, doc_reviewed_at: true,
     };
@@ -1232,12 +1232,17 @@ export default function UseCasesPage() {
       }
 
       // Xử lý thực tế trên DB (sẽ tự động cascade xóa do foreign key ON DELETE CASCADE)
-      const { error } = await supabase
-        .from('use_cases')
-        .delete()
-        .in('id', selectedIds);
+      // Chunking selectedIds to prevent 'Bad Request' (URL too long) errors when deleting many items
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < selectedIds.length; i += CHUNK_SIZE) {
+        const chunk = selectedIds.slice(i, i + CHUNK_SIZE);
+        const { error } = await supabase
+          .from('use_cases')
+          .delete()
+          .in('id', chunk);
 
-      if (error) throw error;
+        if (error) throw error;
+      }
 
       setSelectedUseCases({});
       alert(`Đã xóa ${selectedIds.length} Use Cases thành công!`);
@@ -1300,7 +1305,16 @@ export default function UseCasesPage() {
     }
   };
 
+  // Map STT based on created_at (earliest first)
+  const sttMap = useMemo(() => {
+    const sorted = [...useCases].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+    const map = {};
+    sorted.forEach((uc, idx) => { map[uc.id] = idx + 1; });
+    return map;
+  }, [useCases]);
+
   const COLS = [
+    { key: 'stt',             label: 'STT',                  locked: true },
     { key: 'code',            label: 'Mã Use Case',          locked: true },
     { key: 'name',            label: 'Tên Use Case',          locked: true },
     { key: 'description',     label: 'Mô tả nghiệp vụ' },
@@ -1355,6 +1369,11 @@ export default function UseCasesPage() {
         const order = { 'Đơn giản': 1, 'Trung bình': 2, 'Phức tạp': 3 };
         valA = order[a.difficulty] || 0;
         valB = order[b.difficulty] || 0;
+      }
+
+      if (sortBy === 'stt') {
+        valA = sttMap[a.id] || 0;
+        valB = sttMap[b.id] || 0;
       }
 
       if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
@@ -1537,6 +1556,7 @@ export default function UseCasesPage() {
                 onChange={(e) => setSortBy(e.target.value)}
                 className="px-3 py-2 bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer appearance-none min-w-[125px]"
               >
+                <option value="stt" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300">Số thứ tự (STT)</option>
                 <option value="code" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300">Mã Use Case</option>
                 <option value="name" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300">Tên kịch bản</option>
                 <option value="difficulty" className="bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300">Mức độ khó</option>
@@ -1678,6 +1698,10 @@ export default function UseCasesPage() {
                               onChange={(e) => handleToggleSelectUseCase(uc.id, e)}
                               className="w-4 h-4 rounded border-slate-300 dark:border-slate-800 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                             />
+                          </td>
+                          {/* stt — always visible (locked) */}
+                          <td className="px-4 py-3 font-semibold text-sm text-slate-500 dark:text-slate-400 text-center select-none" style={{ width: colWidths.stt }}>
+                            {sttMap[uc.id]}
                           </td>
                           {/* code — always visible (locked) */}
                           <td className="px-4 py-3 font-bold text-sm text-indigo-600 dark:text-indigo-400 select-all overflow-hidden" style={{ width: colWidths.code }}>

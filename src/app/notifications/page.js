@@ -161,12 +161,16 @@ export default function NotificationsPage() {
     if (!ids.length) return;
     setItems(prev => prev.map(r => ({ ...r, is_read: true })));
     if (!IS_CONFIGURED) return;
-    await withTimeout(
-      supabase
-        .from('notification_recipients')
-        .update({ is_read: true, read_at: new Date().toISOString() })
-        .in('id', ids)
-    ).catch(() => {});
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+      const chunk = ids.slice(i, i + CHUNK_SIZE);
+      await withTimeout(
+        supabase
+          .from('notification_recipients')
+          .update({ is_read: true, read_at: new Date().toISOString() })
+          .in('id', chunk)
+      ).catch(() => {});
+    }
   };
 
   const markOneRead = async (id) => {
